@@ -60,12 +60,17 @@ def _sample_preference(rng: random.Random) -> dict:
 
 
 class GymIrrigationEnv(gym.Env):
-    def __init__(self, sites=None, soils=None, years=None, seed=None):
+    def __init__(self, sites=None, soils=None, years=None, seed=None, site_weights=None):
+        """site_weights: optional {site_id: weight} for non-uniform sampling
+        (研究方案 7.1 实例加权迁移 - e.g. weighting source sites by inverse
+        environmental distance to a transfer target). Sites not present in
+        the dict get weight 0. Defaults to uniform sampling."""
         super().__init__()
         self.sites = sites or list(SITES)
         self.soils = soils or list(STANDARD_SOILS)
         self.years = years or list(range(START_YEAR, END_YEAR + 1))
         self._rng = random.Random(seed)
+        self._site_weights = [site_weights.get(s, 0.0) for s in self.sites] if site_weights else None
 
         self.action_space = spaces.Discrete(len(ACTIONS_MM))
         obs_dim = len(STATE_KEYS) + len(PREFERENCE_KEYS)
@@ -84,7 +89,10 @@ class GymIrrigationEnv(gym.Env):
         # bug - a policy that only ever sees one fixed scenario per seed
         # wouldn't learn to condition on the preference vector.
         super().reset(seed=seed)
-        site_id = self._rng.choice(self.sites)
+        if self._site_weights is not None:
+            site_id = self._rng.choices(self.sites, weights=self._site_weights, k=1)[0]
+        else:
+            site_id = self._rng.choice(self.sites)
         soil_key = self._rng.choice(self.soils)
         year = self._rng.choice(self.years)
         self.weights = _sample_preference(self._rng)

@@ -20,6 +20,10 @@ large-magnitude-but-only-weakly-informative features (biomass, gdd_cum -
 both roughly just proxies for calendar time) drown out the small-scale
 but decision-critical ones (depletion_frac, tr_ratio) early in training,
 before the network ever learns to condition on them.
+
+The actual training loop lives in train_utils.train_policy() so
+src/transfer/'s leave-one-out and instance-weighted experiments can reuse
+the exact same procedure instead of duplicating it.
 """
 
 import sys
@@ -28,58 +32,23 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "data"))
 
-from stable_baselines3 import PPO
-from stable_baselines3.common.callbacks import CheckpointCallback
-from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize
-
 from config import SITES
 from soils import STANDARD_SOILS
-
-from gym_env import GymIrrigationEnv
+from train_utils import train_policy
 
 TRAIN_YEARS = list(range(1981, 2011))
 N_ENVS = 8
 TOTAL_TIMESTEPS = 1_000_000
 RUN_NAME = "ppo_irrigation"  # change this per run so parallel/rerun outputs don't collide
 
-OUT_DIR = Path(__file__).resolve().parents[2] / "data" / "processed"
-CHECKPOINT_DIR = OUT_DIR / "ppo_checkpoints"
-
-
-def make_env():
-    return GymIrrigationEnv(sites=list(SITES), soils=list(STANDARD_SOILS), years=TRAIN_YEARS)
-
 
 def main():
-    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
-    vec_env = make_vec_env(make_env, n_envs=N_ENVS, vec_env_cls=SubprocVecEnv)
-    vec_env = VecNormalize(vec_env, norm_obs=True, norm_reward=False, clip_obs=10.0)
-
-    model = PPO(
-        "MlpPolicy",
-        vec_env,
-        verbose=1,
-        n_steps=512,
-        batch_size=256,
-        n_epochs=10,
-        learning_rate=3e-4,
-        gamma=0.995,
-        ent_coef=0.01,  # SB3 defaults to 0.0; see module docstring on why this
-        # alone wasn't enough without also normalizing observations.
+    model_path, vecnorm_path = train_policy(
+        sites=SITES, soils=STANDARD_SOILS, years=TRAIN_YEARS,
+        total_timesteps=TOTAL_TIMESTEPS, run_name=RUN_NAME, n_envs=N_ENVS,
+        checkpoint_every=50_000,
     )
-    checkpoint_cb = CheckpointCallback(
-        save_freq=max(50_000 // N_ENVS, 1),
-        save_path=str(CHECKPOINT_DIR),
-        name_prefix=RUN_NAME,
-        save_vecnormalize=True,  # each checkpoint gets a matching *_vecnormalize_*.pkl
-    )
-    model.learn(total_timesteps=TOTAL_TIMESTEPS, callback=checkpoint_cb, progress_bar=False)
-
-    final_path = OUT_DIR / f"{RUN_NAME}_final.zip"
-    model.save(str(final_path))
-    vec_env.save(str(OUT_DIR / f"{RUN_NAME}_final_vecnormalize.pkl"))
-    print(f"saved final model -> {final_path}")
+    print(f"saved final model -> {model_path}")
 
 
 if __name__ == "__main__":
