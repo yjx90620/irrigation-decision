@@ -4,6 +4,7 @@ numpy>=1.24
 pyarrow>=14.0
 aquacrop>=3.0
 matplotlib>=3.7
+seaborn>=0.13
 pymoo>=0.6
 xarray>=2023.1
 netCDF4>=1.6
