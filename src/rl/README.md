@@ -9,7 +9,8 @@
 - **`test_env_random_policy.py`** / **`benchmark_device.py`** — 冒烟测试和吞吐量基准，不是正式流程的一部分。
 - **`evaluate_policy.py`** — 评估框架：给定任意策略函数（规则或训练好的 SB3 模型），在 站点×土壤×年份×偏好 网格上跑，产出和基线实验、NSGA-II 前沿同口径的指标（产量/灌溉量/安全层介入率等），可以直接比较。
 - **`train_ppo_smoke_test.py`** — 5000 步的冒烟测试，只确认训练循环能跑通，不是真训练。
-- **`train_ppo.py`** — 正式训练：100万步，8 个并行环境（`SubprocVecEnv`），域随机化覆盖 5 站点×3 土壤×训练年份（1981—2010，方案5.10的切分），验证年（2011—2017）和测试年（2018—2025）留出不参与训练。
+- **`train_ppo.py`** — 正式训练：100万步，8 个并行环境（`SubprocVecEnv`），域随机化覆盖 5 站点×3 土壤×训练年份（1981—2010，方案5.10的切分），验证年（2011—2017）和测试年（2018—2025）留出不参与训练。用 `VecNormalize` 做观测归一化（原因见下面的踩坑记录），每个 checkpoint 都配一份对应的归一化参数（`save_vecnormalize=True`）。改 `RUN_NAME` 常量可以并行跑多个版本互不覆盖。
+- **`reconstruct_learning_curve.py`** — 训练日志本身没存成 CSV（stable-baselines3 默认只打印到控制台），这个脚本事后把 `ppo_checkpoints/` 里所有 checkpoint 拿固定场景（3个站点×2015年×平衡偏好）评估一遍，拼出学习曲线存到 `data/processed/ppo_learning_curve.csv`。可以随时重跑，已经评估过的 checkpoint 会跳过。
 
 ## GPU 加速的结论
 
@@ -23,6 +24,16 @@
 
 修复（`env.py` + `train_ppo.py`）：把 `water`/`cost` 按单步最大可能值归一化到大致 [-1, 0]，和 `yield_proxy` 同量级；训练加 `ent_coef=0.01`。用 10 万步小规模验证过：熵从 -1.6 缓慢降到 -0.7（不再是直接归零），平均回报从 ~7 涨到 ~10，确认策略还在正常探索和进步，才重新跑完整的 100 万步。
 
+## 踩过的第二个坑：熵没崩，但策略"模式"还是卡在不灌水
+
+上面这个修复过的版本训练到 70 万步，`entropy_loss`/`approx_kl` 看着都正常（没有归零），但用 `reconstruct_learning_curve.py` 把从 5 万到 70 万步的每个 checkpoint 拿固定场景（含宁夏 2015 年这种明确缺水的年份，产量只有 7.9 t/ha）评估一遍，发现确定性输出**从头到尾都是 0mm，一次没变过**。策略的"众数"卡住了，即便分布还留着一点熵没探索完。
+
+根因是状态特征完全没做归一化，量纲差了大约 600 倍——`tr_ratio`/`depletion_frac` 是 0—1，`biomass`/`gdd_cum`/`remaining_water_budget` 是几百到几百的量级。没有归一化的话，大量纲但信息量低的特征（`biomass`、`gdd_cum` 基本只是日历时间的代理）在梯度里会把小量纲但真正该看的信号（`depletion_frac`、`tr_ratio`）淹没掉，网络可能在还没学会"看水分亏缺"之前就已经把"别灌水"锁死成局部最优了。
+
+修复：训练时用 `VecNormalize(norm_obs=True)` 包一层，每个 checkpoint 连同归一化统计量一起存（`CheckpointCallback(save_vecnormalize=True)`），`evaluate_policy.py` 的 `load_ppo_policy()` 会自动找配对的归一化文件并应用。5万步小规模验证：同一策略在宁夏2015/2018/2020年分别给出10mm/20mm/20mm——不再是死板的全0，训练预算只有卡住那版的1/20就已经是质的差别。
+
+修复后的完整 100 万步训练用 `RUN_NAME="ppo_irrigation_v2"` 单独跑，第一版（卡住不灌水的那个）保留没杀掉，它跑完的学习曲线本身就是个有意思的"负结果"记录（存在 `data/processed/ppo_learning_curve.csv`，`ppo_irrigation` 前缀的 checkpoint）。
+
 ## 当前状态
 
-修复后的正式训练（`train_ppo.py`）在跑，checkpoint 存在 `data/processed/ppo_checkpoints/`，跑完后用 `evaluate_policy.py` 在验证/测试年份上和阈值规则、NSGA-II 前沿做对比——重点看它是不是学会了"平时少灌、缺水年份该出手时出手"，而不是又退化成一个极端。
+`ppo_irrigation_v2`（VecNormalize 修复版）在跑，checkpoint 存在 `data/processed/ppo_checkpoints/`，跑完后用 `evaluate_policy.py`（记得传对应的 `--model-path`）在验证/测试年份上和阈值规则、NSGA-II 前沿做对比——重点看它是不是学会了"平时少灌、缺水年份该出手时出手"。
