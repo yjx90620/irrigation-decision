@@ -1,0 +1,9 @@
+strategy,yield_t_ha,irrigation_mm,events,deep_perc_mm,runoff_mm,yield_pct_of_full,water_saving_pct
+rainfed,12.95,0.0,0.0,42.37,47.42,89.7,100.0
+threshold_60pct,14.26,66.41,2.66,47.09,49.51,98.8,86.4
+threshold_50pct,14.27,91.71,3.68,52.61,50.75,98.9,81.2
+threshold_40pct,14.3,126.97,5.18,61.66,51.77,99.1,73.9
+critical_stage,14.23,131.22,5.25,68.13,53.93,98.6,73.1
+threshold_30pct,14.36,182.33,7.82,76.85,53.45,99.5,62.6
+fixed_interval_14d,14.29,186.19,9.05,84.79,57.59,99.0,61.8
+full_irrigation,14.43,486.91,87.65,218.72,87.55,100.0,0.0

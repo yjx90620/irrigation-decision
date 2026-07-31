@@ -17,14 +17,10 @@ env/
 .RData
 .Rproj.user/
 
-# Data (large/raw data usually not tracked directly)
-*.csv
-*.xlsx
+# Data: results/checkpoints ARE tracked (paper figures need the raw
+# numbers) - only transient intermediate files are excluded.
 *.nc
-*.tif
-*.tiff
-*.zip
-!/data/**/README.md
+data/raw/weather_agera5/_tmp/
 
 # Logs & temp
 *.log
