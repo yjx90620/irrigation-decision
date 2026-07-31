@@ -6,3 +6,28 @@
 - **AgERA5（CDS 正式数据）**：已配置 `~/.cdsapirc`（本机用户目录，不在仓库内）并验证 API key 有效、可正常下载。后续可切换到 `sis-agrometeorological-indicators` 数据集作为一级正式数据源。
 - **土壤数据**：SoilGrids 当前网络不可达，暂用 `src/data/soils.py` 中 AquaCrop-OSPy 内置的标准土壤（SandyLoam/Loam/ClayLoam）代替，对应方案中的砂壤土/壤土/黏壤土。
 - **站点配置**：见 `src/data/config.py`（5 个代表区域坐标、历史年份范围）。
+
+## 基线实验网格结果（研究方案 4.5/4.8/4.9）
+
+`src/sim/experiment.py` 跑完了 5 站点 × 3 土壤 × 45 年 × 8 种基线策略（共 5400 次 AquaCrop 模拟），结果在 `data/processed/baseline_experiment_results.csv`（逐次模拟明细）和 `data/processed/baseline_strategy_summary.csv`（按策略汇总）。
+
+策略平均表现（全部站点/土壤/年份平均）：
+
+| 策略 | 产量 (t/ha) | 灌溉量 (mm) | 灌溉次数 | 产量达充分灌溉% | 相对充分灌溉节水% |
+| --- | --- | --- | --- | --- | --- |
+| rainfed（雨养） | 12.95 | 0 | 0 | 89.7% | 100% |
+| threshold_60pct | 14.26 | 66 | 2.7 | 98.8% | 86.4% |
+| threshold_50pct | 14.27 | 92 | 3.7 | 98.9% | 81.2% |
+| threshold_40pct | 14.30 | 127 | 5.2 | 99.1% | 73.9% |
+| critical_stage | 14.23 | 131 | 5.3 | 98.6% | 73.1% |
+| threshold_30pct | 14.36 | 182 | 7.8 | 99.5% | 62.6% |
+| fixed_interval_14d | 14.29 | 186 | 9.1 | 99.0% | 61.8% |
+| full_irrigation（充分灌溉） | 14.43 | 487 | 87.7 | 100% | 0% |
+
+初步结论（与方案 4.12 预期结论形式一致，具体数字待多年更细致验证后定稿）：亏缺灌溉阈值策略（60% 亏缺触发）能以约 14% 的充分灌溉水量拿到 98.8% 的产量，节水潜力比方案预估的 15–25% 更大，值得在 NSGA-II 帕累托前沿分析中重点关注这一区间。
+
+区域差异（雨养 vs 充分灌溉产量对比）验证了 5 个站点确实覆盖了从湿润到干旱的梯度：宁夏灌区雨养产量比充分灌溉低 33%（9.57 vs 14.27 t/ha），而陕西关中雨养产量已接近充分灌溉（14.27 vs 14.41 t/ha）。
+
+## NSGA-II 帕累托前沿（研究方案 4.5 策略六）
+
+`src/sim/optimize_nsga2.py` 对每个 site×soil 组合求解 4 目标（产量/灌溉量/成本/深层渗漏+径流）帕累托前沿，决策变量为 AquaCrop 4 个生育阶段的土壤水分目标 SMT + 单日最大灌水量上限。结果存在 `data/processed/pareto_front_{site}_{soil}.csv`。目前只跑了河北中部/壤土一组作为验证，其余站点×土壤组合待后续批量运行。
