@@ -1,0 +1,121 @@
+"""Winter wheat - summer maize double-cropping rotation engine.
+
+AquaCrop-OSPy cannot simulate crop rotations in a single run (the rotation
+code in aquacrop.initialize.read_model_parameters is commented out with
+"The model does not allow rotations now"), so this chains separate runs
+and hands the soil water profile from each crop to the next via
+InitialWaterContent(wc_type="Num", method="Layer").
+
+Why this matters (see docs/系统升级方案.md): with every season restarting
+at field capacity, 4 of 5 sites reached 93-99% of full-irrigation yield
+with zero irrigation - there was almost no irrigation signal to study.
+Under a real rotation the wheat crop draws the profile down near wilting
+point by June, so the following maize starts water-limited: measured
+3.58 t/ha (after rainfed wheat) vs 7.41 (after irrigated wheat).
+
+Winter wheat phenology is calibrated for the North China Plain rather
+than using AquaCrop's stock parameters, which don't fit: calendar-day
+`Wheat` matures late April (vs the real early-June harvest) with yield
+pinned regardless of irrigation, and stock `WheatGDD` needs 2400 GDD
+which an Oct-Jun window just barely misses (2398 measured). See
+WHEAT_PARAMS below.
+"""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "data"))
+
+import pandas as pd
+from aquacrop import AquaCropModel, Crop, InitialWaterContent
+
+from soils import get_soil
+from weather import load_site_weather
+
+# North China Plain winter wheat, GDD-based (Tbase=0). Maturity lowered from
+# stock WheatGDD's 2400 to 2200 GDD, which puts harvest at ~June 10 in Hebei -
+# matching the region's actual harvest window - and lets the crop complete
+# within an Oct-Jun season. Senescence/HIstart shifted proportionally.
+WHEAT_PARAMS = dict(Maturity=2200, Senescence=1600, HIstart=1200)
+WHEAT_PLANTING = "10/10"
+WHEAT_HARVEST = "06/25"  # simulation window end; actual maturity is GDD-driven
+
+MAIZE_PLANTING = "06/15"  # after wheat harvest, standard NCP double-cropping
+MAIZE_HARVEST = "10/05"
+
+
+def _wc_from_profile(th) -> InitialWaterContent:
+    return InitialWaterContent(
+        wc_type="Num", method="Layer", depth_layer=list(range(1, len(th) + 1)), value=list(th)
+    )
+
+
+def run_season(weather_df, soil_key, crop, sim_start, sim_end, irrigation_management, initial_wc):
+    model = AquaCropModel(
+        sim_start_time=sim_start,
+        sim_end_time=sim_end,
+        weather_df=weather_df,
+        soil=get_soil(soil_key),
+        crop=crop,
+        initial_water_content=initial_wc,
+        irrigation_management=irrigation_management,
+    )
+    model.run_model(till_termination=True)
+    results = model.get_simulation_results()
+    flux = model.get_water_flux()
+    metrics = {
+        "dry_yield_t_ha": results["Dry yield (tonne/ha)"].iloc[0],
+        "irrigation_mm": results["Seasonal irrigation (mm)"].iloc[0],
+        "irrigation_events": int((flux["IrrDay"] > 0).sum()),
+        "deep_perc_mm": flux["DeepPerc"].sum(),
+        "runoff_mm": flux["Runoff"].sum(),
+        "et_mm": (flux["Es"] + flux["Tr"]).sum(),
+        "harvest_date": str(results["Harvest Date (YYYY/MM/DD)"].iloc[0])[:10],
+    }
+    return metrics, model._init_cond.th
+
+
+def run_rotation_year(weather_df, soil_key, year, wheat_irr, maize_irr, initial_wc):
+    """One wheat->maize cycle: wheat sown Oct of `year-1`, maize harvested Oct
+    of `year`. Returns (rows, end_of_year_soil_profile)."""
+    wheat_crop = Crop("WheatGDD", planting_date=WHEAT_PLANTING, harvest_date=WHEAT_HARVEST, **WHEAT_PARAMS)
+    wheat_metrics, th_after_wheat = run_season(
+        weather_df, soil_key, wheat_crop,
+        f"{year - 1}/{WHEAT_PLANTING}", f"{year}/{WHEAT_HARVEST}",
+        wheat_irr, initial_wc,
+    )
+
+    maize_crop = Crop("Maize", planting_date=MAIZE_PLANTING, harvest_date=MAIZE_HARVEST)
+    maize_metrics, th_after_maize = run_season(
+        weather_df, soil_key, maize_crop,
+        f"{year}/{MAIZE_PLANTING}", f"{year}/{MAIZE_HARVEST}",
+        maize_irr, _wc_from_profile(th_after_wheat),
+    )
+
+    rows = [
+        {"year": year, "crop": "wheat", **wheat_metrics},
+        {"year": year, "crop": "maize", **maize_metrics},
+    ]
+    return rows, th_after_maize
+
+
+def run_rotation_series(site_id, soil_key, years, wheat_irr_factory, maize_irr_factory, initial_wc=None):
+    """Multi-year continuous rotation - soil water carries across the whole
+    series, not just within a year, so a dry year's depletion propagates
+    forward the way it does in a real field."""
+    weather_df = load_site_weather(site_id)
+    if initial_wc is None:
+        initial_wc = InitialWaterContent(value=["FC"])
+
+    all_rows = []
+    carry_wc = initial_wc
+    for year in years:
+        rows, th_end = run_rotation_year(
+            weather_df, soil_key, year, wheat_irr_factory(), maize_irr_factory(), carry_wc
+        )
+        for r in rows:
+            r.update({"site_id": site_id, "soil": soil_key})
+        all_rows.extend(rows)
+        carry_wc = _wc_from_profile(th_end)
+
+    return pd.DataFrame(all_rows)
