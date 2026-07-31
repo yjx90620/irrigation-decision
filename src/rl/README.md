@@ -15,6 +15,14 @@
 
 这台机器有 RTX 3090，测过 GPU vs CPU 的吞吐量（`benchmark_device.py`）：**只快 1.12 倍**（248 fps → 278 fps）。原因是环境本身的瓶颈在 AquaCrop 的 CPU 仿真（numpy 计算），策略网络只是个很小的 MLP，搬到 GPU 的收益被 CPU-GPU 传输开销抵消了大半——stable-baselines3 自己也会在这种情况下报警告（"PPO 用 MlpPolicy 时不建议上 GPU"）。所以目前训练继续用 CPU 跑，没有为了这点提升重启已经训练到一半的任务。如果以后研究内容三用更大的共享编码器网络，GPU 收益可能会明显一些，到时候再重新测。
 
+## 踩过的坑：策略退化成"永远不灌水"
+
+第一版 100 万步正式训练跑完后评估，发现无论站点/年份/偏好，输出永远是 0mm——包括宁夏 2020 年这种严重缺水、产量已经崩到 8.65 t/ha 的场景。查训练日志发现 `approx_kl` 和 `clip_fraction` 在 n_updates≈2400 时就已经精确等于 0，说明策略早早就停止更新了。
+
+根因是奖励量纲没对齐：`water`/`cost` 用的是原始 mm/成本数值（单步最多 -40/-45），`yield_proxy` 却停留在 0—1 量级，两者相差 30—40 倍——不管方案里写的偏好权重是多少，水/成本惩罚在加权和里都会碾压产量项。再加上 stable-baselines3 的 `ent_coef` 默认是 0（没有熵奖励鼓励探索），策略一旦发现"不灌水"能避免这个惩罚，就再也不会跳出来看灌水的长期产量收益了。
+
+修复（`env.py` + `train_ppo.py`）：把 `water`/`cost` 按单步最大可能值归一化到大致 [-1, 0]，和 `yield_proxy` 同量级；训练加 `ent_coef=0.01`。用 10 万步小规模验证过：熵从 -1.6 缓慢降到 -0.7（不再是直接归零），平均回报从 ~7 涨到 ~10，确认策略还在正常探索和进步，才重新跑完整的 100 万步。
+
 ## 当前状态
 
-正式训练（`train_ppo.py`）在跑，checkpoint 存在 `data/processed/ppo_checkpoints/`，跑完后用 `evaluate_policy.py` 在验证/测试年份上和阈值规则、NSGA-II 前沿做对比。
+修复后的正式训练（`train_ppo.py`）在跑，checkpoint 存在 `data/processed/ppo_checkpoints/`，跑完后用 `evaluate_policy.py` 在验证/测试年份上和阈值规则、NSGA-II 前沿做对比——重点看它是不是学会了"平时少灌、缺水年份该出手时出手"，而不是又退化成一个极端。
