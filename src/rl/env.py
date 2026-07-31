@@ -14,14 +14,17 @@ planting AquaCrop runs a "fallow" sub-model that ignores our IrrMngt object
 entirely, which would make early actions silently no-ops.
 
 Decision interval is 3 days (研究方案 5.4), action is a single irrigation
-pulse applied on the first day of each window. Reward is a 4-vector
-[yield_proxy, water, cost, risk] combined via the caller-supplied preference
-weights - see combine_reward(). This is a first-pass reward design to
-validate the environment mechanics; the yield_proxy uses the season's
-transpiration ratio (1.0 = no water stress) as a per-step proxy since true
-yield is only known at harvest, plus a final-day bonus from actual Dry
-yield normalized against the site's full-irrigation ceiling from the
-baseline experiment grid (data/processed/baseline_strategy_summary.csv).
+pulse applied on the first day of each window, passed through a rule-based
+safety layer (研究方案 5.8) before being handed to AquaCrop. Reward is a
+4-vector [yield_proxy, water, cost, risk] combined via the caller-supplied
+preference weights - see combine_reward(). The yield_proxy uses the
+season's transpiration ratio (1.0 = no water stress) as a per-step proxy
+since true yield is only known at harvest, plus a final-day bonus from
+actual Dry yield normalized against that site's full-irrigation ceiling
+(read from data/processed/baseline_experiment_results.csv, the 5400-run
+baseline grid - soil type barely moves the full-irrigation yield since
+full irrigation removes water stress regardless of the soil's holding
+capacity, so the ceiling is keyed by site only).
 """
 
 import sys
@@ -31,6 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "data"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "sim"))
 
 import numpy as np
+import pandas as pd
 from aquacrop import AquaCropModel, Crop, InitialWaterContent, IrrigationManagement
 
 from soils import get_soil
@@ -45,9 +49,44 @@ COST_WATER = 1.0
 COST_START = 5.0
 MAX_IRR_SEASON_DEFAULT = 600.0  # mm, seasonal water budget cap
 
-# Fallback yield ceiling (t/ha) used to normalize the terminal reward until
-# every site/soil has a baseline_strategy_summary.csv entry to read from.
-DEFAULT_YIELD_CEILING = 14.5
+# Safety-layer thresholds (研究方案 5.8)
+SATURATION_DEPLETION_FRAC = 0.1  # below this, root zone is already near field capacity
+HEAVY_RAIN_MM_3D = 20.0  # forecast rain over the next 3 days that makes irrigation redundant
+LATE_SEASON_DAYS_TO_HARVEST = 7  # irrigation this close to harvest has no yield payoff
+
+DEFAULT_YIELD_CEILING = 14.5  # fallback t/ha if the baseline grid csv isn't available yet
+_BASELINE_RESULTS_PATH = Path(__file__).resolve().parents[2] / "data" / "processed" / "baseline_experiment_results.csv"
+
+
+def _load_yield_ceilings() -> dict:
+    if not _BASELINE_RESULTS_PATH.exists():
+        return {}
+    df = pd.read_csv(_BASELINE_RESULTS_PATH)
+    full = df[df["strategy"] == "full_irrigation"]
+    return full.groupby("site_id")["dry_yield_t_ha"].mean().to_dict()
+
+
+YIELD_CEILINGS = _load_yield_ceilings()
+
+
+def safety_filter(action_mm: float, state: dict, days_to_harvest: float) -> tuple:
+    """Clip/override a raw action against physical and management constraints.
+    Returns (adjusted_mm, was_modified)."""
+    adjusted = action_mm
+
+    if action_mm > 0 and state["depletion_frac"] < SATURATION_DEPLETION_FRAC:
+        adjusted = 0.0  # root zone already near field capacity, irrigating would waste water / risk waterlogging
+
+    if adjusted > 0 and state["precip_next_3d"] >= HEAVY_RAIN_MM_3D:
+        adjusted = 0.0  # substantial rain already covers this window
+
+    if adjusted > 0 and days_to_harvest <= LATE_SEASON_DAYS_TO_HARVEST:
+        adjusted = 0.0  # too close to harvest to matter
+
+    remaining_budget = max(state["remaining_water_budget"], 0)
+    adjusted = min(adjusted, remaining_budget)
+
+    return adjusted, adjusted != action_mm
 
 
 class IrrigationEnv:
@@ -60,6 +99,10 @@ class IrrigationEnv:
         self._year_df = self._weather_df[
             (self._weather_df["Date"] >= f"{year}-01-01") & (self._weather_df["Date"] <= f"{year}-12-31")
         ].reset_index(drop=True)
+        planting = pd.Timestamp(f"{year}/{PLANTING_DATE}")
+        harvest = pd.Timestamp(f"{year}/{HARVEST_DATE}")
+        self.total_season_days = (harvest - planting).days
+        self.yield_ceiling = YIELD_CEILINGS.get(site_id, DEFAULT_YIELD_CEILING)
 
     def reset(self):
         soil = get_soil(self.soil_key)
@@ -79,7 +122,8 @@ class IrrigationEnv:
         self.days_since_last_irr = 99
         self.last_irr_mm = 0.0
         self.done = False
-        return self._get_state()
+        self._last_state = self._get_state()
+        return self._last_state
 
     def _forecast(self, horizon_days: int) -> dict:
         current_date = self.model._clock_struct.step_start_time
@@ -118,8 +162,8 @@ class IrrigationEnv:
 
     def step(self, action_mm: float):
         assert not self.done, "call reset() before stepping a finished episode"
-        remaining_budget = self.max_irr_season - self.model._init_cond.irr_cum
-        applied = min(action_mm, max(remaining_budget, 0))
+        days_to_harvest = self.total_season_days - self._last_state["dap"]
+        applied, action_modified = safety_filter(action_mm, self._last_state, days_to_harvest)
 
         self.model._param_struct.IrrMngt.depth = applied
         self.model.run_model(num_steps=1, initialize_model=False)
@@ -139,6 +183,7 @@ class IrrigationEnv:
 
         self.done = self.model._clock_struct.model_is_finished
         state = self._get_state()
+        self._last_state = state
 
         mean_stress = float(np.mean(stress_samples))
         reward = {
@@ -147,13 +192,13 @@ class IrrigationEnv:
             "cost": -(COST_WATER * applied + COST_START * (applied > 0)),
             "risk": -1.0 if mean_stress < 0.5 else 0.0,
         }
-        info = {"applied_mm": applied}
+        info = {"applied_mm": applied, "raw_action_mm": action_mm, "action_modified": action_modified}
 
         if self.done:
             res = self.model.get_simulation_results()
             info["dry_yield_t_ha"] = res["Dry yield (tonne/ha)"].iloc[0]
             info["seasonal_irrigation_mm"] = res["Seasonal irrigation (mm)"].iloc[0]
-            reward["yield_proxy"] += info["dry_yield_t_ha"] / DEFAULT_YIELD_CEILING
+            reward["yield_proxy"] += info["dry_yield_t_ha"] / self.yield_ceiling
 
         return state, reward, self.done, info
 

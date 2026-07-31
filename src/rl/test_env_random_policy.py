@@ -18,15 +18,18 @@ def main():
     state = env.reset()
     total_scalar_reward = 0.0
     n_steps = 0
+    n_modified = 0
     done = False
     while not done:
         action = random.choice(ACTIONS_MM)
         state, reward, done, info = env.step(action)
         total_scalar_reward += combine_reward(reward, WEIGHTS)
         n_steps += 1
+        n_modified += int(info["action_modified"])
     print(f"episode finished in {n_steps} decision steps")
     print(f"final dry yield: {info['dry_yield_t_ha']:.2f} t/ha")
     print(f"seasonal irrigation: {info['seasonal_irrigation_mm']:.1f} mm")
+    print(f"safety layer modified {n_modified}/{n_steps} actions ({100*n_modified/n_steps:.0f}%)")
     print(f"scalarized return (random policy): {total_scalar_reward:.2f}")
 
 
