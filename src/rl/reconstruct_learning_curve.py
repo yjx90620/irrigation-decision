@@ -31,27 +31,40 @@ EVAL_SCENARIOS = [
 BALANCED_WEIGHTS = {"yield_proxy": 0.4, "water": 0.3, "cost": 0.2, "risk": 0.1}
 
 
-def checkpoint_step_count(path: Path) -> int:
-    match = re.search(r"_(\d+)_steps", path.stem)
-    return int(match.group(1))
+def parse_checkpoint_name(path: Path) -> tuple:
+    """Different training runs (train_ppo.py's RUN_NAME) reuse the same
+    checkpoint step counts, so "timesteps alone" is not a unique key -
+    e.g. both a stuck run and its VecNormalize-fixed rerun have a
+    "..._300000_steps.zip". Must dedupe/group by (run, steps), not steps
+    alone, or one run's already-evaluated rows silently mask another run's
+    checkpoints at the same step count."""
+    match = re.match(r"^(.+)_(\d+)_steps$", path.stem)
+    run, steps = match.groups()
+    return run, int(steps)
 
 
 def main():
     existing = pd.read_csv(OUT_PATH) if OUT_PATH.exists() else pd.DataFrame()
-    done_steps = set(existing["timesteps"]) if not existing.empty else set()
+    if not existing.empty and "run" not in existing.columns:
+        raise RuntimeError(
+            f"{OUT_PATH} predates per-run tracking and can't be deduped safely - "
+            "delete it and rerun to regenerate from scratch."
+        )
+    done_keys = set(zip(existing["run"], existing["timesteps"])) if not existing.empty else set()
 
     rows = []
-    checkpoints = sorted(CHECKPOINT_DIR.glob("*.zip"), key=checkpoint_step_count)
+    checkpoints = sorted(CHECKPOINT_DIR.glob("*.zip"), key=lambda p: parse_checkpoint_name(p)[1])
     for ckpt in checkpoints:
-        steps = checkpoint_step_count(ckpt)
-        if steps in done_steps:
+        run, steps = parse_checkpoint_name(ckpt)
+        if (run, steps) in done_keys:
             continue
         policy_fn = load_ppo_policy(str(ckpt))
         for site_id, soil_key, year in EVAL_SCENARIOS:
             result = run_episode(site_id, soil_key, year, BALANCED_WEIGHTS, policy_fn)
+            result["run"] = run
             result["timesteps"] = steps
             rows.append(result)
-        print(f"evaluated checkpoint at {steps} steps")
+        print(f"evaluated {run} checkpoint at {steps} steps")
 
     if rows:
         new_df = pd.DataFrame(rows)

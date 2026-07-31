@@ -4,10 +4,12 @@
 - **`fig_baseline_overview.py`** → `figures/fig1_baseline_overview.png` — 基线实验网格四联图：各策略产量分布、节水—产量权衡、区域气候梯度、非生产性水损失。
 - **`fig_pareto_fronts.py`** → `figures/fig2_pareto_fronts.png` — NSGA-II 帕累托前沿：5站点叠加对比、前沿宽度随干旱程度变化、目标权衡平行坐标图。
 - **`fig_environmental_fingerprint.py`** → `figures/fig3_environmental_fingerprint.png` — 环境指纹雷达图、区域距离热力图、层次聚类树状图、PCA散点图。
+- **`fig_rl_training_curve.py`** → `figures/fig4_rl_training_curve.png` — PPO 训练曲线（v1卡死 vs v2修复后，逐checkpoint重建），2x3面板（灌溉量/产量 × 3个代表站点）。
+- **`fig_rl_vs_baselines.py`** → `figures/fig5_rl_vs_baselines.png` — PPO v2 vs 阈值规则基线，5站点产量+灌溉量对比。
 
 ## 还没做的（等对应研究进展到那一步再补）
 
-- 研究二：PPO 训练曲线、偏好模式对比（稳产/节水/经济/平衡四种）、RL vs 规则 vs NSGA-II 的综合对比图、单个决策序列的时间线图（哪天灌了多少水、土壤墒情怎么变化）
+- 研究二：偏好模式对比（稳产/节水/经济/平衡四种，目前评估都用的是单一平衡权重）、RL vs 规则 vs NSGA-II 三方综合对比（目前只对比了 RL vs 规则，NSGA-II 前沿还没接进来）、单个决策序列的时间线图（哪天灌了多少水、土壤墒情怎么变化）
 - 研究三：留一地区迁移实验的结果对比图、负迁移检测效果图
 
 ## 给后续复杂制图留的接口
