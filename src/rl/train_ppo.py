@@ -49,6 +49,10 @@ def main():
         n_epochs=10,
         learning_rate=3e-4,
         gamma=0.995,
+        ent_coef=0.01,  # SB3 defaults to 0.0; without an entropy bonus the first
+        # training run collapsed to a deterministic "never irrigate" policy within
+        # a few hundred updates (see env.py's reward-scaling comment for the other
+        # half of that fix) before it could discover irrigation's yield upside.
     )
     checkpoint_cb = CheckpointCallback(
         save_freq=max(50_000 // N_ENVS, 1), save_path=str(CHECKPOINT_DIR), name_prefix="ppo_irrigation"

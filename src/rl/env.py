@@ -186,10 +186,16 @@ class IrrigationEnv:
         self._last_state = state
 
         mean_stress = float(np.mean(stress_samples))
+        # water/cost normalized to roughly [-1, 0] per step (by the max a
+        # single action can cost) so their magnitude is comparable to
+        # yield_proxy's ~[0, 1] range - a first training run with raw mm/cost
+        # values found irrigation cost dominating the sum by 3-5x regardless
+        # of preference weights, and PPO (no entropy bonus by default)
+        # collapsed to "never irrigate" within the first few hundred updates.
         reward = {
             "yield_proxy": mean_stress,  # 1.0 = no water stress this window
-            "water": -applied,
-            "cost": -(COST_WATER * applied + COST_START * (applied > 0)),
+            "water": -applied / max(ACTIONS_MM),
+            "cost": -(COST_WATER * applied + COST_START * (applied > 0)) / (COST_WATER * max(ACTIONS_MM) + COST_START),
             "risk": -1.0 if mean_stress < 0.5 else 0.0,
         }
         info = {"applied_mm": applied, "raw_action_mm": action_mm, "action_modified": action_modified}
