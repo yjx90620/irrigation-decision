@@ -9,6 +9,7 @@ to that interface; threshold_policy() is a simple non-RL baseline used to
 sanity-check the harness itself.
 """
 
+import re
 import sys
 from pathlib import Path
 
@@ -18,6 +19,25 @@ import numpy as np
 import pandas as pd
 
 from env import ACTIONS_MM, IrrigationEnv, combine_reward
+
+
+def _find_vecnormalize_path(model_path: Path) -> Path | None:
+    """Match train_ppo.py's save conventions: "{run}_final.zip" pairs with
+    "{run}_final_vecnormalize.pkl"; CheckpointCallback's
+    "{prefix}_{steps}_steps.zip" pairs with "{prefix}_vecnormalize_{steps}_steps.pkl".
+    Returns None for models saved without VecNormalize (e.g. the pre-fix
+    checkpoints, or ppo_smoke_test.zip) so callers can fall back gracefully."""
+    if model_path.stem.endswith("_final"):
+        candidate = model_path.with_name(model_path.stem + "_vecnormalize.pkl")
+        return candidate if candidate.exists() else None
+
+    match = re.match(r"(.+)_(\d+)_steps$", model_path.stem)
+    if match:
+        prefix, steps = match.groups()
+        candidate = model_path.with_name(f"{prefix}_vecnormalize_{steps}_steps.pkl")
+        return candidate if candidate.exists() else None
+
+    return None
 
 
 def run_episode(site_id: str, soil_key: str, year: int, weights: dict, policy_fn) -> dict:
@@ -64,13 +84,25 @@ def threshold_policy(state: dict, weights: dict) -> float:
 
 def load_ppo_policy(model_path: str):
     from stable_baselines3 import PPO
+    from stable_baselines3.common.vec_env import VecNormalize
+    from stable_baselines3.common.vec_env.dummy_vec_env import DummyVecEnv
 
-    from gym_env import PREFERENCE_KEYS, STATE_KEYS
+    from gym_env import GymIrrigationEnv, PREFERENCE_KEYS, STATE_KEYS
 
     model = PPO.load(model_path)
 
+    vecnorm_path = _find_vecnormalize_path(Path(model_path))
+    obs_rms = None
+    if vecnorm_path is not None:
+        # DummyVecEnv here is just a container VecNormalize.load() requires -
+        # it's never stepped, only used to read back obs_rms.mean/var.
+        dummy_venv = DummyVecEnv([lambda: GymIrrigationEnv(sites=["hebei_central"], soils=["loam"], years=[2015])])
+        obs_rms = VecNormalize.load(str(vecnorm_path), dummy_venv).obs_rms
+
     def policy_fn(state: dict, weights: dict) -> float:
         obs = np.array([float(state[k]) for k in STATE_KEYS] + [weights[k] for k in PREFERENCE_KEYS], dtype=np.float32)
+        if obs_rms is not None:
+            obs = np.clip((obs - obs_rms.mean) / np.sqrt(obs_rms.var + 1e-8), -10.0, 10.0).astype(np.float32)
         action_idx, _ = model.predict(obs, deterministic=True)
         return ACTIONS_MM[int(action_idx)]
 
