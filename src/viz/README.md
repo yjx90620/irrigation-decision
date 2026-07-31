@@ -6,11 +6,12 @@
 - **`fig_environmental_fingerprint.py`** → `figures/fig3_environmental_fingerprint.png` — 环境指纹雷达图、区域距离热力图、层次聚类树状图、PCA散点图。
 - **`fig_rl_training_curve.py`** → `figures/fig4_rl_training_curve.png` — PPO 训练曲线（v1卡死 vs v2修复后，逐checkpoint重建），2x3面板（灌溉量/产量 × 3个代表站点）。
 - **`fig_rl_vs_baselines.py`** → `figures/fig5_rl_vs_baselines.png` — PPO v2 vs 阈值规则基线，5站点产量+灌溉量对比。
+- **`fig_transfer_leave_one_out.py`** → `figures/fig6_transfer_leave_one_out.png` — 留一地区验证：零样本/微调/规则基线产量对比，环境距离 vs 迁移难度散点图。
 
 ## 还没做的（等对应研究进展到那一步再补）
 
 - 研究二：偏好模式对比（稳产/节水/经济/平衡四种，目前评估都用的是单一平衡权重）、RL vs 规则 vs NSGA-II 三方综合对比（目前只对比了 RL vs 规则，NSGA-II 前沿还没接进来）、单个决策序列的时间线图（哪天灌了多少水、土壤墒情怎么变化）
-- 研究三：留一地区迁移实验的结果对比图、负迁移检测效果图
+- 研究三：负迁移检测/门控效果图（机制本身还没实现）、实例加权 vs 均匀采样的直接对比图（目前两组数据在不同CSV里，还没画在一起）
 
 ## 给后续复杂制图留的接口
 

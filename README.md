@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | 一、数字农田与多目标灌溉基准 | 数据+基线+帕累托前沿已跑通 | 见 [data/README.md](data/README.md)、[src/sim/README.md](src/sim/README.md) |
 | 二、多目标协同灌溉决策模型 | 环境+安全层+评估框架完成，PPO 训练完成第一轮评估（易站点已超阈值规则的用水效率，最干旱站点还没追上） | 见 [src/rl/README.md](src/rl/README.md) |
-| 三、跨区域动态迁移与适应性验证 | 环境指纹与区域相似性分析已完成，迁移方法本身还没开始 | 见 [src/transfer/README.md](src/transfer/README.md)，后续依赖研究二训练好的策略网络 |
+| 三、跨区域动态迁移与适应性验证 | 环境指纹+留一验证+实例加权已完成第一轮（证实宁夏最难迁移，但环境距离不是唯一因素）；动态切换和负迁移门控还没做 | 见 [src/transfer/README.md](src/transfer/README.md) |
 
 ## 仓库结构
 
