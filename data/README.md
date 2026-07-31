@@ -1,15 +1,32 @@
-这里存放研究相关数据。原始数据文件（csv/xlsx 等）默认不纳入 git 版本控制（见根目录 `.gitignore`），通过 `src/data/` 下的脚本可复现下载。
+这里存放研究相关数据。原始数据文件（csv/xlsx/zip 等）默认不纳入 git 版本控制（见根目录 `.gitignore`），通过 `src/` 下的脚本可复现下载/生成。
 
-## 当前状态（研究内容一：数据准备）
+## 目录结构
 
-- **气象数据**：`data/raw/weather/{site_id}_1981_2025_openmeteo.csv`，通过 `src/data/download_weather_openmeteo.py` 从 Open-Meteo Archive API（基于 ERA5 再分析）下载，覆盖 5 个站点、1981—2025 年，日尺度 Tmax/Tmin/降水/ET0/辐射/风速/相对湿度。这是方案中的二级/冻结数据集，作为正式数据不可用时的基准。
-- **AgERA5（CDS 正式数据）**：已配置 `~/.cdsapirc`（本机用户目录，不在仓库内）并验证 API key 有效、可正常下载。后续可切换到 `sis-agrometeorological-indicators` 数据集作为一级正式数据源。
-- **土壤数据**：SoilGrids 当前网络不可达，暂用 `src/data/soils.py` 中 AquaCrop-OSPy 内置的标准土壤（SandyLoam/Loam/ClayLoam）代替，对应方案中的砂壤土/壤土/黏壤土。
+- `raw/weather/` — Open-Meteo 全周期气象数据（主数据源）
+- `raw/weather_agera5/` — AgERA5 验证样本（2024年，5站点×4变量）
+- `frozen/` — 预留给方案里的"三级备用：项目冻结数据集"，暂未使用（Open-Meteo 数据已经是完整下载好的本地文件，起到同样的作用）
+- `processed/` — 所有实验/训练产出：基线实验网格结果、NSGA-II 帕累托前沿、AgERA5 一致性检验、PPO 训练 checkpoint
+
+## 数据来源（研究内容一：数据准备）
+
+- **气象数据（主数据源）**：`raw/weather/{site_id}_1981_2025_openmeteo.csv`，通过 `src/data/download_weather_openmeteo.py` 从 Open-Meteo Archive API（基于 ERA5 再分析）下载，覆盖 5 个站点、1981—2025 年，日尺度 Tmax/Tmin/降水/ET0/辐射/风速/相对湿度。免注册免密钥，全周期建模都用这个。
+- **AgERA5（正式引用数据源 + 抽样校验）**：已配置 `~/.cdsapirc` 并验证 API key 有效。CDS 逐日单独出文件，45 年 × 5 站点全量拉取要跑很久（见下面"耗时说明"），所以只拉了 2024 年做校验样本，不作为全周期主数据源。
+- **土壤数据**：SoilGrids 当前网络不可达（详见 `src/data/README.md` 的"已知限制"），暂用 `src/data/soils.py` 中 AquaCrop-OSPy 内置的标准土壤（SandyLoam/Loam/ClayLoam）代替，对应方案中的砂壤土/壤土/黏壤土。
 - **站点配置**：见 `src/data/config.py`（5 个代表区域坐标、历史年份范围）。
+
+## Open-Meteo vs AgERA5 一致性检验
+
+`src/data/validate_agera5_vs_openmeteo.py` 用 2024 年 AgERA5 验证样本和同期 Open-Meteo 数据逐日比对，结果在 `processed/agera5_vs_openmeteo_validation.csv`：
+
+- **气温**（Tmax/Tmin）：相关系数 0.99+，均值偏差普遍在 ±0.5℃ 以内
+- **ET0**：相关系数 0.96—0.98，均值偏差在 ±0.25 mm/day 以内
+- **降水**：相关系数 0.80—0.93（比气温/ET0 低是预期的，降水本身空间异质性强，点提取和小范围格点平均本来就会有差异）
+
+结论：Open-Meteo 作为全周期（1981—2025）建模的工作数据集是可靠的，可以放心当主数据源，不必强求把 45 年全部换成逐日单独请求的 AgERA5。
 
 ## 基线实验网格结果（研究方案 4.5/4.8/4.9）
 
-`src/sim/experiment.py` 跑完了 5 站点 × 3 土壤 × 45 年 × 8 种基线策略（共 5400 次 AquaCrop 模拟），结果在 `data/processed/baseline_experiment_results.csv`（逐次模拟明细）和 `data/processed/baseline_strategy_summary.csv`（按策略汇总）。
+`src/sim/experiment.py` 跑完了 5 站点 × 3 土壤 × 45 年 × 8 种基线策略（共 5400 次 AquaCrop 模拟），结果在 `processed/baseline_experiment_results.csv`（逐次模拟明细）和 `processed/baseline_strategy_summary.csv`（按策略汇总）。
 
 策略平均表现（全部站点/土壤/年份平均）：
 
@@ -30,21 +47,15 @@
 
 ## NSGA-II 帕累托前沿（研究方案 4.5 策略六）
 
-`src/sim/optimize_nsga2.py` 对每个 site×soil 组合求解 4 目标（产量/灌溉量/成本/深层渗漏+径流）帕累托前沿，决策变量为 AquaCrop 4 个生育阶段的土壤水分目标 SMT + 单日最大灌水量上限。结果存在 `data/processed/pareto_front_{site}_{soil}.csv`。
+`src/sim/optimize_nsga2.py` 对每个 site×soil 组合求解 4 目标（产量/灌溉量/成本/深层渗漏+径流）帕累托前沿，决策变量是 AquaCrop 4 个生育阶段的土壤水分目标 SMT + 单日最大灌水量上限（不是方案原文的"每阶段固定灌水量"，原因见 `src/sim/README.md`）。结果存在 `processed/pareto_front_{site}_{soil}.csv`。
 
 河北中部/壤土（种群40×25代，2016—2020年5年平均评估）已跑完，40 个非支配解在第4代左右就已全部落在同一前沿上，此后仅在前沿内部微调（收敛良好）：
 
 - 产量范围 14.16—14.77 t/ha，灌溉量范围 0—182 mm
 - 前沿在低灌溉区间非常密集：0 mm → 14.16 t/ha，仅 14.7 mm 灌溉就能到 14.43 t/ha，与基线阈值实验的结论互相印证（少量灌溉边际产量收益很高，之后迅速递减）
 
-其余站点×土壤组合待后续批量运行（每组约 40—50 分钟，可以后台跑）。
+其余站点（壤土）由 `src/sim/batch_optimize_loam.py` 批量补齐（每组约 40—50 分钟）。
 
-## Open-Meteo vs AgERA5 一致性检验
+## 研究内容二（强化学习决策）
 
-`src/data/validate_agera5_vs_openmeteo.py` 用 2024 年 AgERA5 验证样本（5 站点 × 4 变量）和同期 Open-Meteo 数据逐日比对，结果在 `data/processed/agera5_vs_openmeteo_validation.csv`：
-
-- **气温**（Tmax/Tmin）：相关系数 0.99+，均值偏差普遍在 ±0.5℃ 以内
-- **ET0**：相关系数 0.96—0.98，均值偏差在 ±0.25 mm/day 以内
-- **降水**：相关系数 0.80—0.93（比气温/ET0 低是预期的，降水本身空间异质性强，点提取和小范围格点平均本来就会有差异）
-
-结论：Open-Meteo（ERA5 archive）作为全周期（1981—2025）建模的工作数据集是可靠的，可以放心把它当作研究一/二算法开发和大规模仿真的主数据源，AgERA5 保留作正式引用来源和抽样验证用途，不必强求把 45 年全部换成逐日单独请求的 AgERA5（见 `download_weather_agera5.py` 里关于耗时的说明）。
+进展、环境设计细节、GPU 加速评测结论见 [src/rl/README.md](../src/rl/README.md)。产出的策略模型/checkpoint 也存在 `processed/`（`ppo_smoke_test.zip` 是冒烟测试，`ppo_checkpoints/` 和 `ppo_irrigation_final.zip` 是正式训练）。
