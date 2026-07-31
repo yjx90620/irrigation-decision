@@ -9,3 +9,5 @@ xarray>=2023.1
 netCDF4>=1.6
 h5netcdf>=1.2
 cdsapi>=0.7
+gymnasium>=1.0
+stable-baselines3>=2.9
