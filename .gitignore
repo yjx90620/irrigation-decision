@@ -23,6 +23,7 @@ env/
 *.nc
 *.tif
 *.tiff
+*.zip
 !/data/**/README.md
 
 # Logs & temp
