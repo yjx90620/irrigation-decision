@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | 一、数字农田与多目标灌溉基准 | 数据+基线+帕累托前沿已跑通 | 见 [data/README.md](data/README.md)、[src/sim/README.md](src/sim/README.md) |
 | 二、多目标协同灌溉决策模型 | 环境+安全层+评估框架已完成，正式 PPO 训练进行中 | 见 [src/rl/README.md](src/rl/README.md) |
-| 三、跨区域动态迁移与适应性验证 | 尚未开始 | 依赖研究一/二的产出（策略库、训练好的策略网络） |
+| 三、跨区域动态迁移与适应性验证 | 环境指纹与区域相似性分析已完成，迁移方法本身还没开始 | 见 [src/transfer/README.md](src/transfer/README.md)，后续依赖研究二训练好的策略网络 |
 
 ## 仓库结构
 
@@ -21,6 +21,7 @@ src/
   data/          数据获取与站点/土壤配置
   sim/           AquaCrop 基线仿真、灌溉策略、NSGA-II 优化
   rl/            强化学习环境、Gym 封装、PPO 训练与评估
+  transfer/      环境指纹、区域相似性分析（跨区域迁移）
 ```
 
 每个子目录都有自己的 README，说明该目录下脚本的用途和运行顺序。

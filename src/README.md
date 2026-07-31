@@ -3,5 +3,6 @@
 - [data/](data/README.md) — 站点/土壤配置，气象数据下载（Open-Meteo + AgERA5），数据一致性检验
 - [sim/](sim/README.md) — AquaCrop 数字农田：基线灌溉策略、实验网格、NSGA-II 多目标优化
 - [rl/](rl/README.md) — 强化学习决策模型：环境封装、安全动作层、PPO 训练与评估
+- [transfer/](transfer/README.md) — 跨区域迁移：环境指纹、区域相似性分析（迁移方法本身还没开始）
 
-运行顺序大致是 `data/` → `sim/` → `rl/`，后一个目录的脚本依赖前一个目录产出的数据/结果（各目录 README 里有说明）。
+运行顺序大致是 `data/` → `sim/` → `rl/` → `transfer/`，后一个目录的脚本依赖前一个目录产出的数据/结果（各目录 README 里有说明）。
