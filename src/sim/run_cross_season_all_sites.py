@@ -14,6 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "data"))
 
 from config import SITES
+from cropping_systems import is_double_crop
 
 SCRIPT = Path(__file__).resolve().parent / "optimize_cross_season.py"
 PYTHON = Path(__file__).resolve().parents[2] / ".venv" / "Scripts" / "python.exe"
@@ -26,6 +27,11 @@ N_GEN = 20
 def main():
     procs = {}
     for site_id in SITES:
+        # Cross-season allocation needs two crops sharing a quota; Ningxia
+        # is single spring maize (see cropping_systems.py).
+        if not is_double_crop(site_id):
+            print(f"skip {site_id}: single-crop site, no cross-season allocation")
+            continue
         out_path = OUT_DIR / f"cross_season_pareto_{site_id}_loam.csv"
         if out_path.exists():
             print(f"skip {site_id}, already done")

@@ -30,6 +30,7 @@ import pandas as pd
 from aquacrop import IrrigationManagement
 
 from config import SITES
+from cropping_systems import is_double_crop
 from rotation import run_rotation_series
 
 ANNUAL_QUOTA_MM = 450.0
@@ -75,6 +76,13 @@ def main():
 
     frames = [existing] if not existing.empty else []
     for site_id in SITES:
+        # alpha is the wheat/maize split of the annual quota, so it only has
+        # meaning where both crops exist. Ningxia is single spring maize
+        # (it lacks the growing degree days for winter wheat - see
+        # cropping_systems.py), so there is nothing to allocate there.
+        if not is_double_crop(site_id):
+            print(f"skip {site_id}: single-crop site, no wheat/maize split to scan")
+            continue
         if all((site_id, lvl) in done for lvl in SMT_LEVELS):
             print(f"skip {site_id}, already scanned")
             continue
