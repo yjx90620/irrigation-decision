@@ -25,8 +25,11 @@ import numpy as np
 import pandas as pd
 from aquacrop import AquaCropModel, Crop, InitialWaterContent, IrrigationManagement
 
+from cropping_systems import (
+    SPRING_MAIZE_HARVEST, SPRING_MAIZE_PLANTING, is_double_crop, wheat_params_for,
+)
 from rotation import (
-    MAIZE_HARVEST, MAIZE_PLANTING, WHEAT_HARVEST, WHEAT_PARAMS, WHEAT_PLANTING, _wc_from_profile,
+    MAIZE_HARVEST, MAIZE_PLANTING, WHEAT_HARVEST, WHEAT_PLANTING, _wc_from_profile,
 )
 from soil_moisture_init import initial_water_content as observed_initial_wc
 from soils import get_soil
@@ -44,11 +47,12 @@ SATURATION_DEPLETION_FRAC = 0.1
 HEAVY_RAIN_MM_3D = 20.0
 LATE_SEASON_DAYS_TO_HARVEST = 7
 
-# Yield normalization per crop, so the two seasons contribute comparably to
-# reward despite maize out-yielding wheat. Values are near the top of what
-# the rotation produces under generous irrigation (measured: wheat ~6.5-7,
-# maize ~8.8-9).
-YIELD_REFERENCE = {"wheat": 7.0, "maize": 9.0}
+# Yield normalization per crop, so seasons contribute comparably to reward
+# despite maize out-yielding wheat. Values are near the top of what each
+# system produces under generous irrigation (measured: wheat ~6.5-7,
+# double-crop maize ~8.8-9, Ningxia spring maize ~14.4 - the single-crop
+# season is much longer and yields far more).
+YIELD_REFERENCE = {"wheat": 7.0, "maize": 9.0, "spring_maize": 14.5}
 
 
 def safety_filter(action_mm, state, days_to_harvest, remaining_quota):
@@ -74,7 +78,12 @@ class RotationIrrigationEnv:
     # --- season plumbing -------------------------------------------------
     def _start_season(self, crop_name, sim_start, sim_end, initial_wc):
         if crop_name == "wheat":
-            crop = Crop("WheatGDD", planting_date=WHEAT_PLANTING, harvest_date=WHEAT_HARVEST, **WHEAT_PARAMS)
+            crop = Crop(
+                "WheatGDD", planting_date=WHEAT_PLANTING, harvest_date=WHEAT_HARVEST,
+                **wheat_params_for(self.site_id),
+            )
+        elif crop_name == "spring_maize":
+            crop = Crop("Maize", planting_date=SPRING_MAIZE_PLANTING, harvest_date=SPRING_MAIZE_HARVEST)
         else:
             crop = Crop("Maize", planting_date=MAIZE_PLANTING, harvest_date=MAIZE_HARVEST)
         model = AquaCropModel(
@@ -93,11 +102,20 @@ class RotationIrrigationEnv:
         self.season_days = (pd.Timestamp(sim_end.replace("/", "-")) - planting).days
 
     def reset(self):
-        first_sowing = f"{self.year - 1}-{WHEAT_PLANTING.replace('/', '-')}"
-        initial_wc = observed_initial_wc(self.site_id, self.soil_key, first_sowing)
-        self._start_season(
-            "wheat", f"{self.year - 1}/{WHEAT_PLANTING}", f"{self.year}/{WHEAT_HARVEST}", initial_wc
-        )
+        self.double_crop = is_double_crop(self.site_id)
+        if self.double_crop:
+            first_sowing = f"{self.year - 1}-{WHEAT_PLANTING.replace('/', '-')}"
+            initial_wc = observed_initial_wc(self.site_id, self.soil_key, first_sowing)
+            self._start_season(
+                "wheat", f"{self.year - 1}/{WHEAT_PLANTING}", f"{self.year}/{WHEAT_HARVEST}", initial_wc
+            )
+        else:
+            first_sowing = f"{self.year}-{SPRING_MAIZE_PLANTING.replace('/', '-')}"
+            initial_wc = observed_initial_wc(self.site_id, self.soil_key, first_sowing)
+            self._start_season(
+                "spring_maize", f"{self.year}/{SPRING_MAIZE_PLANTING}",
+                f"{self.year}/{SPRING_MAIZE_HARVEST}", initial_wc,
+            )
         self.quota_used = 0.0
         self.days_since_last_irr = 99
         self.last_irr_mm = 0.0
@@ -200,9 +218,10 @@ class RotationIrrigationEnv:
                 )
                 self.days_since_last_irr, self.last_irr_mm = 99, 0.0
             else:
+                # end of the last (or only) season of the cycle
                 self.done = True
-                info["wheat"] = self.season_results["wheat"]
-                info["maize"] = self.season_results["maize"]
+                for name, res in self.season_results.items():
+                    info[name] = res
                 info["total_yield_t_ha"] = sum(v["dry_yield_t_ha"] for v in self.season_results.values())
                 info["total_irrigation_mm"] = sum(v["irrigation_mm"] for v in self.season_results.values())
 
