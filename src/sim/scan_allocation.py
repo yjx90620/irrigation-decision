@@ -36,9 +36,15 @@ from rotation import run_rotation_series
 ANNUAL_QUOTA_MM = 450.0
 ALPHAS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 SMT_LEVELS = {"conservative": [40] * 4, "moderate": [60] * 4, "aggressive": [80] * 4}
-YEARS = list(range(2011, 2021))  # 10 years, includes wet and dry
+# 6 years (not 10): the full grid is 3 SMT levels x 9 alphas x N years x up to
+# 20 AquaCrop runs/year = 5400 runs/site at 10 years - underestimated when
+# first written. 6 years (spanning both wet and dry, picked from the same
+# 2011-2020 decade used elsewhere) still shows whether the optimal split
+# moves across year types, at 60% of the cost.
+YEARS = [2011, 2013, 2015, 2017, 2018, 2020]
 
-OUT_PATH = Path(__file__).resolve().parents[2] / "data" / "processed" / "allocation_scan.csv"
+OUT_DIR = Path(__file__).resolve().parents[2] / "data" / "processed"
+OUT_PATH = OUT_DIR / "allocation_scan.csv"  # merged output (all sites)
 
 
 def scan_site(site_id, soil_key="loam"):
@@ -70,26 +76,43 @@ def scan_site(site_id, soil_key="loam"):
     return pd.DataFrame(rows)
 
 
-def main():
+def main(site_id=None):
+    if site_id:
+        # single-site mode: written to its own file so parallel per-site
+        # processes (run_allocation_scan_all_sites.py) never contend on one
+        # output file.
+        if not is_double_crop(site_id):
+            print(f"skip {site_id}: single-crop site, no wheat/maize split to scan")
+            return
+        out_path = OUT_DIR / f"allocation_scan_{site_id}.csv"
+        if out_path.exists():
+            print(f"skip {site_id}, already scanned")
+            return
+        scan_site(site_id).to_csv(out_path, index=False)
+        print(f"saved -> {out_path}")
+        return
+
+    # no site given: sequential all-sites mode (kept for interactive use)
     existing = pd.read_csv(OUT_PATH) if OUT_PATH.exists() else pd.DataFrame()
     done = set(zip(existing["site_id"], existing["smt_level"])) if not existing.empty else set()
 
     frames = [existing] if not existing.empty else []
-    for site_id in SITES:
-        # alpha is the wheat/maize split of the annual quota, so it only has
-        # meaning where both crops exist. Ningxia is single spring maize
-        # (it lacks the growing degree days for winter wheat - see
-        # cropping_systems.py), so there is nothing to allocate there.
-        if not is_double_crop(site_id):
-            print(f"skip {site_id}: single-crop site, no wheat/maize split to scan")
+    for sid in SITES:
+        if not is_double_crop(sid):
+            print(f"skip {sid}: single-crop site, no wheat/maize split to scan")
             continue
-        if all((site_id, lvl) in done for lvl in SMT_LEVELS):
-            print(f"skip {site_id}, already scanned")
+        if all((sid, lvl) in done for lvl in SMT_LEVELS):
+            print(f"skip {sid}, already scanned")
             continue
-        frames.append(scan_site(site_id))
+        frames.append(scan_site(sid))
         pd.concat(frames, ignore_index=True).to_csv(OUT_PATH, index=False)
     print(f"saved -> {OUT_PATH}")
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--site", default=None)
+    args = parser.parse_args()
+    main(site_id=args.site)
