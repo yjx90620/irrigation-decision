@@ -29,15 +29,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "data"))
 import pandas as pd
 from aquacrop import AquaCropModel, Crop, InitialWaterContent
 
+from cropping_systems import (
+    SPRING_MAIZE_HARVEST, SPRING_MAIZE_PLANTING, is_double_crop, wheat_params_for,
+)
 from soil_moisture_init import initial_water_content as observed_initial_wc
 from soils import get_soil
 from weather import load_site_weather
 
-# North China Plain winter wheat, GDD-based (Tbase=0). Maturity lowered from
-# stock WheatGDD's 2400 to 2200 GDD, which puts harvest at ~June 10 in Hebei -
-# matching the region's actual harvest window - and lets the crop complete
-# within an Oct-Jun season. Senescence/HIstart shifted proportionally.
-WHEAT_PARAMS = dict(Maturity=2200, Senescence=1600, HIstart=1200)
+# Winter wheat is GDD-based (Tbase=0) and its maturity requirement is set
+# per site by cropping_systems.py, because sites differ in whether they can
+# finish a winter wheat cycle at all - Ningxia cannot (1833 GDD vs the 2200
+# a standard cultivar needs) and Beijing only can with a shorter-season
+# cultivar. See cropping_systems.py for the measurements.
 WHEAT_PLANTING = "10/10"
 WHEAT_HARVEST = "06/25"  # simulation window end; actual maturity is GDD-driven
 
@@ -76,10 +79,23 @@ def run_season(weather_df, soil_key, crop, sim_start, sim_end, irrigation_manage
     return metrics, model._init_cond.th
 
 
-def run_rotation_year(weather_df, soil_key, year, wheat_irr, maize_irr, initial_wc):
-    """One wheat->maize cycle: wheat sown Oct of `year-1`, maize harvested Oct
-    of `year`. Returns (rows, end_of_year_soil_profile)."""
-    wheat_crop = Crop("WheatGDD", planting_date=WHEAT_PLANTING, harvest_date=WHEAT_HARVEST, **WHEAT_PARAMS)
+def run_rotation_year(site_id, weather_df, soil_key, year, wheat_irr, maize_irr, initial_wc):
+    """One cropping cycle for `year`. At double-cropping sites that's winter
+    wheat (sown Oct of year-1) followed by summer maize; at single-crop sites
+    (Ningxia, which lacks the growing degree days for winter wheat) it's one
+    spring maize season. Returns (rows, end_of_year_soil_profile)."""
+    if not is_double_crop(site_id):
+        maize_crop = Crop("Maize", planting_date=SPRING_MAIZE_PLANTING, harvest_date=SPRING_MAIZE_HARVEST)
+        maize_metrics, th_end = run_season(
+            weather_df, soil_key, maize_crop,
+            f"{year}/{SPRING_MAIZE_PLANTING}", f"{year}/{SPRING_MAIZE_HARVEST}",
+            maize_irr, initial_wc,
+        )
+        return [{"year": year, "crop": "spring_maize", **maize_metrics}], th_end
+
+    wheat_crop = Crop(
+        "WheatGDD", planting_date=WHEAT_PLANTING, harvest_date=WHEAT_HARVEST, **wheat_params_for(site_id)
+    )
     wheat_metrics, th_after_wheat = run_season(
         weather_df, soil_key, wheat_crop,
         f"{year - 1}/{WHEAT_PLANTING}", f"{year}/{WHEAT_HARVEST}",
@@ -114,14 +130,17 @@ def run_rotation_series(site_id, soil_key, years, wheat_irr_factory, maize_irr_f
     itself part of what an irrigation policy has to respond to."""
     weather_df = load_site_weather(site_id)
     if initial_wc is None:
-        first_sowing = f"{years[0] - 1}-{WHEAT_PLANTING.replace('/', '-')}"
+        if is_double_crop(site_id):
+            first_sowing = f"{years[0] - 1}-{WHEAT_PLANTING.replace('/', '-')}"
+        else:
+            first_sowing = f"{years[0]}-{SPRING_MAIZE_PLANTING.replace('/', '-')}"
         initial_wc = observed_initial_wc(site_id, soil_key, first_sowing)
 
     all_rows = []
     carry_wc = initial_wc
     for year in years:
         rows, th_end = run_rotation_year(
-            weather_df, soil_key, year, wheat_irr_factory(), maize_irr_factory(), carry_wc
+            site_id, weather_df, soil_key, year, wheat_irr_factory(), maize_irr_factory(), carry_wc
         )
         for r in rows:
             r.update({"site_id": site_id, "soil": soil_key})
