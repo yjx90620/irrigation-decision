@@ -58,6 +58,11 @@ PERIODS = {
 
 
 def fetch(site_id, lat, lon, start, end) -> pd.DataFrame:
+    """Open-Meteo enforces separate minutely / hourly / daily quotas, and a
+    7-model 20-year request is heavy enough to hit the hourly one. A short
+    exponential backoff can't clear that, so hourly limits get a long wait
+    instead. Downloads are resumable (completed files are skipped), so
+    giving up and re-running later is always safe."""
     params = {
         "latitude": lat, "longitude": lon,
         "start_date": start, "end_date": end,
@@ -65,17 +70,38 @@ def fetch(site_id, lat, lon, start, end) -> pd.DataFrame:
         "daily": ",".join(DAILY_VARS),
     }
     for attempt in range(6):
-        resp = requests.get(CLIMATE_URL, params=params, timeout=300)
-        if resp.status_code == 429:
+        try:
+            resp = requests.get(CLIMATE_URL, params=params, timeout=300)
+        except requests.RequestException as exc:
+            # These 20-year x 7-model requests are long-lived enough that
+            # transient SSL/connection drops happen; they are not rate limits
+            # and need their own retry path.
             wait = 30 * (attempt + 1)
-            print(f"  rate limited, waiting {wait}s")
+            print(f"  connection error ({type(exc).__name__}) - waiting {wait}s (attempt {attempt + 1}/6)")
             time.sleep(wait)
             continue
+        payload = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
+
+        if resp.status_code == 429 or payload.get("error"):
+            reason = payload.get("reason", f"HTTP {resp.status_code}")
+            if "hour" in reason.lower():
+                wait = 660  # next hour boundary; short backoff cannot clear an hourly quota
+            elif "minut" in reason.lower():
+                wait = 70
+            else:
+                wait = 30 * (attempt + 1)
+            print(f"  {reason} - waiting {wait}s (attempt {attempt + 1}/6)")
+            time.sleep(wait)
+            continue
+
         resp.raise_for_status()
-        break
-    df = pd.DataFrame(resp.json()["daily"]).rename(columns={"time": "date"})
-    df.insert(0, "site_id", site_id)
-    return df
+        if "daily" not in payload:
+            raise RuntimeError(f"unexpected response for {site_id} {start}..{end}: {str(payload)[:200]}")
+        df = pd.DataFrame(payload["daily"]).rename(columns={"time": "date"})
+        df.insert(0, "site_id", site_id)
+        return df
+
+    raise RuntimeError(f"gave up on {site_id} {start}..{end} after 6 attempts - re-run later to resume")
 
 
 def main():
