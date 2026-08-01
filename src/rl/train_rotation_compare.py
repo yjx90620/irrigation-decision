@@ -110,17 +110,20 @@ def evaluate(policy_fn, label, sites=None, years=None):
                 ret += combine_reward(reward, BALANCED_WEIGHTS)
                 n_steps += 1
                 n_mod += int(info["action_modified"])
-            rows.append({
+            # Single-crop sites (Ningxia) have no "wheat" key, so report
+            # per-crop columns only for the crops that site actually grows.
+            row = {
                 "policy": label, "site_id": site_id, "year": year,
-                "wheat_yield": info["wheat"]["dry_yield_t_ha"],
-                "maize_yield": info["maize"]["dry_yield_t_ha"],
                 "total_yield_t_ha": info["total_yield_t_ha"],
-                "wheat_irr": info["wheat"]["irrigation_mm"],
-                "maize_irr": info["maize"]["irrigation_mm"],
                 "total_irrigation_mm": info["total_irrigation_mm"],
                 "action_modified_rate": n_mod / n_steps,
                 "scalar_return": ret,
-            })
+            }
+            for crop in ("wheat", "maize", "spring_maize"):
+                if crop in info:
+                    row[f"{crop}_yield"] = info[crop]["dry_yield_t_ha"]
+                    row[f"{crop}_irr"] = info[crop]["irrigation_mm"]
+            rows.append(row)
     return pd.DataFrame(rows)
 
 
