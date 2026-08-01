@@ -29,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "data"))
 import pandas as pd
 from aquacrop import AquaCropModel, Crop, InitialWaterContent
 
+from soil_moisture_init import initial_water_content as observed_initial_wc
 from soils import get_soil
 from weather import load_site_weather
 
@@ -102,10 +103,19 @@ def run_rotation_year(weather_df, soil_key, year, wheat_irr, maize_irr, initial_
 def run_rotation_series(site_id, soil_key, years, wheat_irr_factory, maize_irr_factory, initial_wc=None):
     """Multi-year continuous rotation - soil water carries across the whole
     series, not just within a year, so a dry year's depletion propagates
-    forward the way it does in a real field."""
+    forward the way it does in a real field.
+
+    initial_wc defaults to the ERA5-Land observed profile on the first
+    wheat sowing date rather than field capacity: starting at FC hands the
+    first season ~150-200mm of free water and is a large part of why the
+    single-season prototype had almost no irrigation signal. Observed
+    autumn wetness varies a lot between years (Hebei 2018-10-10 sat at 7%
+    of plant-available capacity vs 65% in 2020), and that variation is
+    itself part of what an irrigation policy has to respond to."""
     weather_df = load_site_weather(site_id)
     if initial_wc is None:
-        initial_wc = InitialWaterContent(value=["FC"])
+        first_sowing = f"{years[0] - 1}-{WHEAT_PLANTING.replace('/', '-')}"
+        initial_wc = observed_initial_wc(site_id, soil_key, first_sowing)
 
     all_rows = []
     carry_wc = initial_wc
