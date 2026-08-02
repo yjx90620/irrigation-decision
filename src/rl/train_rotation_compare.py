@@ -39,14 +39,27 @@ TOTAL_TIMESTEPS = 400_000
 OUT_DIR = Path(__file__).resolve().parents[2] / "data" / "processed"
 
 
+# beijing_plain excluded: its short-cultivar wheat calendar combined with
+# specific weather years (confirmed for 2013 via scan_allocation.py's
+# bisection) drives AquaCrop's HIGC solver into a non-terminating state
+# regardless of irrigation policy. Domain randomization here samples site x
+# year uniformly, so keeping Beijing in the pool means the SubprocVecEnv
+# rollout has a standing chance of drawing a bad combo every batch, which
+# is consistent with training stalling on a stuck worker even after the
+# critical-depletion safety floor (see rotation_env.py) was added. Same
+# exclusion already applied in scan_allocation.py and task_sensitivity.py
+# for the identical underlying reason.
+TRAIN_SITES = [s for s in SITES if s != "beijing_plain"]
+
+
 # Module-level factories, not closures: SubprocVecEnv pickles these to the
 # worker processes, and Windows' spawn start method can't pickle a closure.
 def make_direct_env():
-    return RotationGymEnv(mode="direct", sites=list(SITES), soils=["loam"], years=TRAIN_YEARS)
+    return RotationGymEnv(mode="direct", sites=list(TRAIN_SITES), soils=["loam"], years=TRAIN_YEARS)
 
 
 def make_residual_env():
-    return RotationGymEnv(mode="residual", sites=list(SITES), soils=["loam"], years=TRAIN_YEARS)
+    return RotationGymEnv(mode="residual", sites=list(TRAIN_SITES), soils=["loam"], years=TRAIN_YEARS)
 
 
 ENV_FACTORIES = {"direct": make_direct_env, "residual": make_residual_env}
