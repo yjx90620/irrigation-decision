@@ -39,22 +39,33 @@ def fetch_wind_mean(lat: float, lon: float) -> pd.DataFrame:
             "start_date": f"{y1}-01-01", "end_date": f"{y2}-12-31",
             "daily": "wind_speed_10m_mean", "timezone": "auto",
         }
+        payload = None
         for attempt in range(6):
             try:
                 resp = requests.get(ARCHIVE_URL, params=params, timeout=60)
-                if resp.status_code == 429:
-                    wait = 20 * (attempt + 1)
-                    print(f"  rate limited {y1}-{y2}, waiting {wait}s")
-                    time.sleep(wait)
-                    continue
-                resp.raise_for_status()
-                break
             except requests.RequestException as exc:
-                if attempt == 5:
-                    raise
-                print(f"  retry {y1}-{y2}: {exc}")
+                # transient SSL/connection errors get their own short
+                # backoff and don't eat into the rate-limit attempt budget's
+                # exponential wait - a fixed 10s retry is enough for those
+                print(f"  connection error {y1}-{y2}: {exc}")
                 time.sleep(10)
-        payload = resp.json()
+                continue
+            body = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
+            if resp.status_code == 429 or body.get("error"):
+                reason = body.get("reason", f"HTTP {resp.status_code}")
+                # Open-Meteo enforces separate hourly/minutely quotas (see
+                # download_cmip6.py) - a short backoff can't clear an hourly
+                # one, confirmed by 10 consecutive 20-200s waits all still
+                # getting "Hourly API request limit exceeded" here.
+                wait = 660 if "hour" in reason.lower() else 70 if "minut" in reason.lower() else 20 * (attempt + 1)
+                print(f"  {reason} - waiting {wait}s (attempt {attempt + 1}/6)")
+                time.sleep(wait)
+                continue
+            resp.raise_for_status()
+            payload = resp.json()
+            break
+        if payload is None:
+            raise RuntimeError(f"gave up on {y1}-{y2} after 6 attempts - re-run later to resume")
         frames.append(pd.DataFrame(payload["daily"]))
         time.sleep(4)
     full = pd.concat(frames, ignore_index=True)
