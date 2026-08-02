@@ -11,11 +11,13 @@ irrigation there). Distance alone would flag it as high-risk; it isn't.
 risk = distance x sensitivity
 
 where distance is environmental distance to the nearest source site
-(site_distance_matrix.csv, from src/transfer/similarity_analysis.py - the
-climate features it's built from are unaffected by the crop-rotation
-upgrade, so that matrix is still valid) and sensitivity is
+(site_distance_matrix.csv, from src/transfer/similarity_analysis.py -
+rebuilt for P1-1, docs/审计修复计划.md: per-cropping-system cool/warm
+season windows instead of one hardcoded single-season window, and
+restricted to TRAIN_YEARS to avoid leaking the RL test period into a
+supposedly target-domain-independent feature) and sensitivity is
 task_sensitivity.py's (full_irrigation - rainfed) / full_irrigation gap
-under the new rotation setup.
+(EVAL_YEARS also moved off the overlapping-with-test-period range).
 
 The multiplicative form encodes the mechanism directly: a source policy
 transplanted to a *similar* environment should do fine regardless of how
@@ -25,8 +27,12 @@ insensitive environment should also do fine (small sensitivity keeps risk
 low even at high distance) - it's the combination that's dangerous.
 
 validate_against_observed_gap() checks this against real transfer results
-once leave_one_out_rotation.py has produced them - not run yet, this
-module is prepared ahead of that.
+from leave_one_out_rotation.py. First real run (2026-08, all P0/P1 fixes
+applied): two_factor_corr=0.95 vs distance_only_corr=0.65 against the
+5-site leave-one-out yield gaps - directionally exactly the hypothesis,
+but n=5 is not enough points to claim this statistically, only to say the
+two-factor predictor is *consistent with* outperforming distance alone
+here (see docs/papers/论文三's finalization checklist on this point).
 """
 
 from pathlib import Path
