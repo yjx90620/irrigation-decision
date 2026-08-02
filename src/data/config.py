@@ -38,5 +38,6 @@ DAILY_VARIABLES = [
     "et0_fao_evapotranspiration",
     "shortwave_radiation_sum",
     "wind_speed_10m_max",
+    "wind_speed_10m_mean",
     "relative_humidity_2m_mean",
 ]
