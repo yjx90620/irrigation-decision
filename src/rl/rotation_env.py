@@ -47,6 +47,24 @@ SATURATION_DEPLETION_FRAC = 0.1
 HEAVY_RAIN_MM_3D = 20.0
 LATE_SEASON_DAYS_TO_HARVEST = 7
 
+# Hard floor added after training hung for 20+ hours with zero checkpoints:
+# task_sensitivity.py independently found that a rainfed (zero-irrigation)
+# policy run for many years can drive AquaCrop's solver into a
+# pathological, effectively non-terminating state (see rotation.py's
+# run_rotation_years_independent docstring for the isolated diagnosis of
+# the closely related year-gap version of this). An RL policy exploring
+# randomly - especially early in training - can reach the same kind of
+# extreme depletion within a *single* episode by simply never irrigating,
+# and since SB3 collects rollouts from all parallel envs in lockstep, one
+# stuck episode stalls the entire training run silently. Rather than try
+# to detect/timeout a hang inside a tight numba-jitted AquaCrop loop
+# (impractical - a Python-level watchdog can't interrupt it, and wrapping
+# every single day's step in its own OS subprocess would defeat the
+# purpose of fast RL stepping), this prevents the state from ever getting
+# that extreme in the first place.
+CRITICAL_DEPLETION_FRAC = 0.85
+CRITICAL_DEPLETION_MIN_MM = 20.0
+
 # Yield normalization per crop, so seasons contribute comparably to reward
 # despite maize out-yielding wheat. Values are near the top of what each
 # system produces under generous irrigation (measured: wheat ~6.5-7,
@@ -64,6 +82,15 @@ def safety_filter(action_mm, state, days_to_harvest, remaining_quota):
     if adjusted > 0 and days_to_harvest <= LATE_SEASON_DAYS_TO_HARVEST:
         adjusted = 0.0
     adjusted = min(adjusted, max(remaining_quota, 0))
+
+    # Critical-depletion floor overrides everything above it (including the
+    # late-season and saturation checks) - see CRITICAL_DEPLETION_FRAC's
+    # comment. This is a numerical-stability guard, not an agronomic
+    # decision, so it intentionally ignores the quota cap too: better to
+    # slightly overspend the season's budget than to hang the simulation.
+    if state["depletion_frac"] >= CRITICAL_DEPLETION_FRAC:
+        adjusted = max(adjusted, CRITICAL_DEPLETION_MIN_MM)
+
     return adjusted, adjusted != action_mm
 
 
