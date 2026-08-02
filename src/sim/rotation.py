@@ -148,3 +148,42 @@ def run_rotation_series(site_id, soil_key, years, wheat_irr_factory, maize_irr_f
         carry_wc = _wc_from_profile(th_end)
 
     return pd.DataFrame(all_rows)
+
+
+def run_rotation_years_independent(site_id, soil_key, years, wheat_irr_factory, maize_irr_factory):
+    """Same per-year simulation as run_rotation_series, but each year in
+    `years` starts fresh from ITS OWN observed autumn soil moisture instead
+    of carrying the profile over from the previous entry in the list.
+
+    Use this (not run_rotation_series) whenever `years` is a non-consecutive
+    sample (e.g. scan_allocation.py's [2011,2013,2015,2017,2018,2020]) rather
+    than a genuine continuous multi-year run. Chaining across a gap year
+    that was never simulated doesn't make physical sense - it hands a season
+    a year-stale soil profile as if no time had passed - and empirically it
+    is not just wrong but pathological: [2011, 2013] with 2012 skipped hung
+    AquaCrop indefinitely at Beijing (diagnosed while debugging
+    scan_allocation.py's timeouts), while [2011, 2012] (consecutive, no
+    gap) and [2011] alone both ran in under 2 seconds. Independent-year
+    evaluation sidesteps the issue entirely rather than working around it
+    with a timeout, and is also the more defensible experiment design here:
+    scan_allocation.py's question is "does the optimal split vary by year
+    *type*", which independent samples answer more cleanly than one
+    particular stitched-together trajectory would anyway.
+    """
+    weather_df = load_site_weather(site_id)
+    all_rows = []
+    for year in years:
+        if is_double_crop(site_id):
+            first_sowing = f"{year - 1}-{WHEAT_PLANTING.replace('/', '-')}"
+        else:
+            first_sowing = f"{year}-{SPRING_MAIZE_PLANTING.replace('/', '-')}"
+        initial_wc = observed_initial_wc(site_id, soil_key, first_sowing)
+
+        rows, _ = run_rotation_year(
+            site_id, weather_df, soil_key, year, wheat_irr_factory(), maize_irr_factory(), initial_wc
+        )
+        for r in rows:
+            r.update({"site_id": site_id, "soil": soil_key})
+        all_rows.extend(rows)
+
+    return pd.DataFrame(all_rows)
