@@ -16,41 +16,59 @@ spring-sown region, not a wheat-maize double-cropping one.
 
 So the cropping system varies by site:
   - NCP double cropping (winter wheat -> summer maize): Henan, Shaanxi
-    Guanzhong, Hebei, and Beijing with a shorter-season wheat cultivar
-    (Maturity 2000 GDD, which Beijing clears in every year on record -
-    using earlier-maturing cultivars at the margin is what growers
-    actually do).
+    Guanzhong, Hebei, and Beijing with shorter-season cultivars.
   - Ningxia: single spring maize, its actual system.
 
 This heterogeneity is not a nuisance to be smoothed over - it makes the
 transfer study (paper 3) sharper, since transferring across *different
 cropping systems* is a harder and more realistic test than transferring
 across climates alone.
+
+Cultivar calibration (P0-1, docs/审计修复计划.md): "clears Maturity GDD
+by 06/25" (the wheat simulation window's outer bound) is not the same
+thing as "harvests before 06/15" (maize's fixed planting date) - a crop
+can need the full window and mature anywhere up to 06/25, which used to
+let wheat's actual GDD-driven harvest land *after* maize's already-begun
+simulated timeline (measured: hebei_central harvested 06-22 in 2013,
+seven days into maize's season) - a genuine date-order violation, not
+just a missed-day-of-water-balance rounding error. calibrate_wheat_
+maturity.py searches, per site, for the shortest-season Maturity (with
+Senescence/HIstart scaled at the same ratios as before) that leaves a
+>=7-day margin before 06/15 in *every* year of 1982-2025 under full
+irrigation (the worst case for late maturity - AquaCrop accelerates
+senescence under stress, so a deficit-irrigated run matures no later).
+Earlier-maturing cultivars at the margin is what growers in this region
+actually do (the previous single-site version of this argument, applied
+to Beijing only, is now generalized). Henan's GDD headroom is wide enough
+that 2200 already clears every year with no changes needed.
 """
 
-WHEAT_MATURITY_STANDARD = 2200
-WHEAT_MATURITY_SHORT = 2000  # earlier cultivar for the northern margin
+WHEAT_MATURITY_STANDARD = 2200  # henan_north only now - see per-site calibration below
 
 DOUBLE_CROP = "wheat_maize"
 SINGLE_SPRING_MAIZE = "spring_maize"
 
 CROPPING_SYSTEMS = {
+    # calibrate_wheat_maturity.py --site hebei_central: worst-case margin 7 days at Maturity=1825
     "hebei_central": {
         "system": DOUBLE_CROP,
-        "wheat_params": dict(Maturity=WHEAT_MATURITY_STANDARD, Senescence=1600, HIstart=1200),
+        "wheat_params": dict(Maturity=1825, Senescence=1327, HIstart=995),
     },
     "henan_north": {
         "system": DOUBLE_CROP,
         "wheat_params": dict(Maturity=WHEAT_MATURITY_STANDARD, Senescence=1600, HIstart=1200),
     },
+    # calibrate_wheat_maturity.py --site shaanxi_guanzhong: worst-case margin 7 days at Maturity=1850
     "shaanxi_guanzhong": {
         "system": DOUBLE_CROP,
-        "wheat_params": dict(Maturity=WHEAT_MATURITY_STANDARD, Senescence=1600, HIstart=1200),
+        "wheat_params": dict(Maturity=1850, Senescence=1345, HIstart=1009),
     },
+    # calibrate_wheat_maturity.py --site beijing_plain --start 2000: worst-case margin 7 days at
+    # Maturity=1600 - needed a much bigger cut than the others (was already the shortest-season
+    # cultivar at 2000 and still had 06/25-window violations up to 10 days late)
     "beijing_plain": {
         "system": DOUBLE_CROP,
-        # shorter-season cultivar; site clears 2000 GDD in all years on record
-        "wheat_params": dict(Maturity=WHEAT_MATURITY_SHORT, Senescence=1450, HIstart=1090),
+        "wheat_params": dict(Maturity=1600, Senescence=1164, HIstart=873),
     },
     "ningxia_irrigation": {
         "system": SINGLE_SPRING_MAIZE,

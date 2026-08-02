@@ -47,33 +47,19 @@ SATURATION_DEPLETION_FRAC = 0.1
 HEAVY_RAIN_MM_3D = 20.0
 LATE_SEASON_DAYS_TO_HARVEST = 7
 
-# Hard floor added after training hung for 20+ hours with zero checkpoints:
-# task_sensitivity.py independently found that a rainfed (zero-irrigation)
-# policy run for many years can drive AquaCrop's solver into a
-# pathological, effectively non-terminating state (see rotation.py's
-# run_rotation_years_independent docstring for the isolated diagnosis of
-# the closely related year-gap version of this). An RL policy exploring
-# randomly - especially early in training - can reach the same kind of
-# extreme depletion within a *single* episode by simply never irrigating,
-# and since SB3 collects rollouts from all parallel envs in lockstep, one
-# stuck episode stalls the entire training run silently. Rather than try
-# to detect/timeout a hang inside a tight numba-jitted AquaCrop loop
-# (impractical - a Python-level watchdog can't interrupt it, and wrapping
-# every single day's step in its own OS subprocess would defeat the
-# purpose of fast RL stepping), this prevents the state from ever getting
-# that extreme in the first place.
+# Soft floor: originally added after training hung for 20+ hours with
+# zero checkpoints, as a workaround for what turned out to be a genuine
+# unbounded loop in aquacrop-ospy's calculate_HIGC() (severe water stress
+# can collapse a crop's calendar into a state where that function never
+# converges - see docs/aquacrop_patches.md). That's now fixed at the
+# actual root (patches/patch_aquacrop_higc.py), so this floor no longer
+# needs to - and per P0-2 (docs/审计修复计划.md) must not - bypass the
+# annual quota to do its job. It's now a *preference* applied only within
+# whatever quota remains: step() clamps to remaining_quota unconditionally,
+# so a depleted quota near season end can still leave the crop under
+# critical stress (recorded as an emergency shortfall, not hidden).
 CRITICAL_DEPLETION_FRAC = 0.85
 CRITICAL_DEPLETION_MIN_MM = 20.0
-# ^ Even with this floor, training stalled again (1 of 8 SubprocVecEnv
-# workers pegged at 100% CPU while the other 7 sat idle waiting on it, for
-# 20+ continuous seconds - the classic "one straggler blocks the lockstep
-# rollout" signature). So 0.85 does not fully close the gap; there is
-# apparently at least one other path into a pathological state that this
-# specific guard doesn't catch. Rather than keep guessing at thresholds,
-# train_rotation_compare.py is now launched under an external watchdog
-# (run_training_with_watchdog.py) that kills and restarts on a stall
-# regardless of root cause - a general safety net instead of a specific
-# fix, since the specific fix has already failed to be complete twice.
 
 # Yield normalization per crop, so seasons contribute comparably to reward
 # despite maize out-yielding wheat. Values are near the top of what each
@@ -84,24 +70,37 @@ YIELD_REFERENCE = {"wheat": 7.0, "maize": 9.0, "spring_maize": 14.5}
 
 
 def safety_filter(action_mm, state, days_to_harvest, remaining_quota):
+    """Returns (filtered_mm, triggered_rules). filtered_mm is NOT yet
+    clamped to remaining_quota - callers (RotationIrrigationEnv.step())
+    must do `applied = min(filtered_mm, max(remaining_quota, 0.0))`
+    themselves and are responsible for the quota being an actual hard cap
+    (P0-2, docs/审计修复计划.md). This function no longer clamps to quota
+    itself so that "the safety filter wanted X mm but quota only allowed Y"
+    is an observable distinction, not silently merged into one number."""
     adjusted = action_mm
+    triggered = []
     if adjusted > 0 and state["depletion_frac"] < SATURATION_DEPLETION_FRAC:
         adjusted = 0.0
+        triggered.append("saturation")
     if adjusted > 0 and state["precip_next_3d"] >= HEAVY_RAIN_MM_3D:
         adjusted = 0.0
+        triggered.append("heavy_rain_forecast")
     if adjusted > 0 and days_to_harvest <= LATE_SEASON_DAYS_TO_HARVEST:
         adjusted = 0.0
-    adjusted = min(adjusted, max(remaining_quota, 0))
+        triggered.append("late_season")
 
-    # Critical-depletion floor overrides everything above it (including the
-    # late-season and saturation checks) - see CRITICAL_DEPLETION_FRAC's
-    # comment. This is a numerical-stability guard, not an agronomic
-    # decision, so it intentionally ignores the quota cap too: better to
-    # slightly overspend the season's budget than to hang the simulation.
+    # Critical-depletion floor: a *preference* for more water when the
+    # crop is under severe stress, applied within whatever quota is left
+    # (never bypasses it - see CRITICAL_DEPLETION_FRAC's comment). Still
+    # overrides the agronomic rules above (saturation/rain/late-season),
+    # since "severely water-stressed" trumps those heuristics regardless
+    # of quota.
     if state["depletion_frac"] >= CRITICAL_DEPLETION_FRAC:
+        if adjusted < CRITICAL_DEPLETION_MIN_MM:
+            triggered.append("critical_depletion")
         adjusted = max(adjusted, CRITICAL_DEPLETION_MIN_MM)
 
-    return adjusted, adjusted != action_mm
+    return adjusted, triggered
 
 
 class RotationIrrigationEnv:
@@ -207,14 +206,40 @@ class RotationIrrigationEnv:
             "irrigation_mm": results["Seasonal irrigation (mm)"].iloc[0],
             "deep_perc_mm": flux["DeepPerc"].sum(),
             "runoff_mm": flux["Runoff"].sum(),
+            "harvest_date": str(results["Harvest Date (YYYY/MM/DD)"].iloc[0])[:10],
         }
         return self.model._init_cond.th
+
+    def _check_wheat_maize_handoff(self):
+        # P0-1 date-order check (docs/审计修复计划.md), mirrors
+        # rotation.py's run_rotation_year - wheat's actual GDD-driven
+        # harvest must precede maize's fixed planting date, or maize would
+        # start from a soil-moisture state that hasn't happened yet in its
+        # own simulated timeline.
+        maize_planting_date = pd.Timestamp(f"{self.year}-{MAIZE_PLANTING.replace('/', '-')}")
+        wheat_harvest_date = pd.Timestamp(self.season_results["wheat"]["harvest_date"])
+        gap_days = (maize_planting_date - wheat_harvest_date).days
+        if gap_days < 0:
+            from rotation import RotationCalendarError
+
+            raise RotationCalendarError(
+                f"{self.site_id} {self.year}: wheat harvested {wheat_harvest_date.date()}, on/after maize's "
+                f"fixed planting date {maize_planting_date.date()} ({-gap_days} day(s) late) - recalibrate "
+                f"wheat_params_for('{self.site_id}') in cropping_systems.py"
+            )
 
     def step(self, action_mm):
         assert not self.done, "call reset() before stepping a finished episode"
         remaining_quota = self.annual_quota - self.quota_used
         days_to_harvest = self.season_days - self._last_state["dap"]
-        applied, modified = safety_filter(action_mm, self._last_state, days_to_harvest, remaining_quota)
+        filtered_mm, triggered_rules = safety_filter(action_mm, self._last_state, days_to_harvest, remaining_quota)
+        # P0-2 (docs/审计修复计划.md): the annual quota is a hard cap,
+        # unconditionally - nothing (including the critical-depletion
+        # floor above) may push actual model irrigation past what's left.
+        applied = min(filtered_mm, max(remaining_quota, 0.0))
+        emergency_shortfall_mm = (
+            max(0.0, CRITICAL_DEPLETION_MIN_MM - applied) if "critical_depletion" in triggered_rules else 0.0
+        )
 
         self.model._param_struct.IrrMngt.depth = applied
         self.model.run_model(num_steps=1, initialize_model=False)
@@ -227,6 +252,9 @@ class RotationIrrigationEnv:
             stress.append(self.model._init_cond.tr_ratio)
 
         self.quota_used += applied
+        assert self.quota_used <= self.annual_quota + 1e-6, (
+            f"quota_used {self.quota_used} exceeded annual_quota {self.annual_quota} - P0-2 hard-cap violated"
+        )
         if applied > 0:
             self.days_since_last_irr, self.last_irr_mm = 0, applied
         else:
@@ -239,8 +267,18 @@ class RotationIrrigationEnv:
             "cost": -(COST_WATER * applied + COST_START * (applied > 0)) / (COST_WATER * max(ACTIONS_MM) + COST_START),
             "risk": -1.0 if mean_stress < 0.5 else 0.0,
         }
-        info = {"applied_mm": applied, "raw_action_mm": action_mm, "action_modified": modified,
-                "crop": self.current_crop}
+        info = {
+            "raw_action_mm": action_mm,
+            "filtered_action_mm": filtered_mm,
+            "actual_model_irrigation_mm": applied,
+            "applied_mm": applied,  # kept for backward compatibility with existing callers
+            "action_modified": applied != action_mm,
+            "safety_rule_triggered": ",".join(triggered_rules) if triggered_rules else "",
+            "quota_used_mm": self.quota_used,
+            "quota_violation_mm": max(0.0, self.quota_used - self.annual_quota),
+            "emergency_shortfall_mm": emergency_shortfall_mm,
+            "crop": self.current_crop,
+        }
 
         if self.model._clock_struct.model_is_finished:
             th_end = self._finish_season()
@@ -248,6 +286,7 @@ class RotationIrrigationEnv:
             reward["yield_proxy"] += self.season_results[crop]["dry_yield_t_ha"] / YIELD_REFERENCE[crop]
 
             if crop == "wheat":
+                self._check_wheat_maize_handoff()
                 # hand the depleted profile to maize and keep going
                 self._start_season(
                     "maize", f"{self.year}/{MAIZE_PLANTING}", f"{self.year}/{MAIZE_HARVEST}",

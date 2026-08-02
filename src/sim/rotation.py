@@ -48,6 +48,19 @@ MAIZE_PLANTING = "06/15"  # after wheat harvest, standard NCP double-cropping
 MAIZE_HARVEST = "10/05"
 
 
+class RotationCalendarError(Exception):
+    """Raised when a rotation year's simulated crop calendar violates date
+    order (P0-1, docs/审计修复计划.md) - concretely, wheat's actual
+    (GDD-driven) harvest date lands on or after maize's fixed planting
+    date, which would otherwise hand maize an initial soil-moisture state
+    from days that haven't happened yet in its own simulated timeline.
+
+    Not caught anywhere by design: this means the cultivar calibration in
+    cropping_systems.py is wrong for this (site, year), and the fix is
+    recalibrating it (see calibrate_wheat_maturity.py), not silently
+    continuing with a physically inconsistent handoff."""
+
+
 def _wc_from_profile(th) -> InitialWaterContent:
     return InitialWaterContent(
         wc_type="Num", method="Layer", depth_layer=list(range(1, len(th) + 1)), value=list(th)
@@ -101,6 +114,21 @@ def run_rotation_year(site_id, weather_df, soil_key, year, wheat_irr, maize_irr,
         f"{year - 1}/{WHEAT_PLANTING}", f"{year}/{WHEAT_HARVEST}",
         wheat_irr, initial_wc,
     )
+
+    # P0-1 date-order check (docs/审计修复计划.md): wheat's actual
+    # GDD-driven harvest must precede maize's fixed planting date, or
+    # maize would be initialized with a soil-moisture state from days
+    # that haven't happened yet in its own simulated timeline.
+    maize_planting_date = pd.Timestamp(f"{year}-{MAIZE_PLANTING.replace('/', '-')}")
+    wheat_harvest_date = pd.Timestamp(wheat_metrics["harvest_date"])
+    gap_days = (maize_planting_date - wheat_harvest_date).days
+    if gap_days < 0:
+        raise RotationCalendarError(
+            f"{site_id} {year}: wheat harvested {wheat_harvest_date.date()}, on/after maize's fixed planting "
+            f"date {maize_planting_date.date()} ({-gap_days} day(s) late) - recalibrate wheat_params_for('"
+            f"{site_id}') in cropping_systems.py (see calibrate_wheat_maturity.py)"
+        )
+    wheat_metrics["gap_days_to_maize_planting"] = gap_days
 
     maize_crop = Crop("Maize", planting_date=MAIZE_PLANTING, harvest_date=MAIZE_HARVEST)
     maize_metrics, th_after_maize = run_season(
