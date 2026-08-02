@@ -63,7 +63,12 @@ EVAL_YEARS = [2016, 2017, 2018, 2019, 2020]
 # site's own best fixed alpha from scan_allocation.py's completed scan
 # (data/processed/allocation_scan.csv, best mean_total_yield across SMT
 # levels) - the 对比1b control, replacing the arbitrary alpha=0.5 strawman.
-BEST_FIXED_ALPHA = {"hebei_central": 0.7, "henan_north": 0.8, "shaanxi_guanzhong": 0.3}
+# beijing_plain's scan originally failed (AquaCrop-internal hang, since
+# root-caused and patched - see patches/patch_aquacrop_higc.py) and was
+# re-run after the fix; all 4 double-crop sites are covered now.
+BEST_FIXED_ALPHA = {
+    "hebei_central": 0.7, "henan_north": 0.8, "shaanxi_guanzhong": 0.3, "beijing_plain": 0.7,
+}
 
 OUT_DIR = Path(__file__).resolve().parents[2] / "data" / "processed"
 
