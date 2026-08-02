@@ -3,9 +3,14 @@ differ only in how the action is interpreted (paper 2's core comparison):
 
 - "direct": the action IS the irrigation depth, as in a standard RL setup.
 - "residual": the action is a *correction* to a rule-based policy's
-  decision (研究方案 5.9 extension). The agent starts at rule-level
-  performance by construction and only has to learn where the rule is
-  wrong, rather than rediscovering irrigation scheduling from scratch.
+  decision (研究方案 5.9 extension), meant to make "where the rule is
+  wrong" easier to learn than rediscovering irrigation scheduling from
+  scratch. This should be described as "residual control with a rule
+  prior", not as starting at rule-level performance "by construction" -
+  a freshly initialized PPO policy's action distribution is not a
+  deterministic zero-delta, it's close to uniform over RESIDUAL_DELTAS,
+  so early rollouts diverge from the rule baseline just like direct
+  mode's do (P0-5, docs/审计修复计划.md).
 
 Why residual is worth testing here specifically: the rule baseline on the
 rotation environment fails in a very legible way - it burns the whole
@@ -43,9 +48,18 @@ STATE_KEYS = [
 ]
 PREFERENCE_KEYS = ["yield_proxy", "water", "cost", "risk"]
 
-# Residual corrections applied to the base policy's depth, clipped into the
-# valid depth range afterwards.
-RESIDUAL_DELTAS = [-20.0, -10.0, 0.0, +10.0, +20.0]
+# Residual corrections applied to the base policy's depth, clipped into
+# [0, max(ACTIONS_MM)] afterwards. P0-5 (docs/审计修复计划.md): the old
+# symmetric set [-20,-10,0,10,20] collapsed to 3 duplicate effective
+# actions ([0,0,0,10,20]) whenever threshold_policy's base is 0 - which,
+# since threshold_policy only ever outputs 0 or 20mm, is one of just two
+# possible base values this ever gets clipped against. This set is chosen
+# so clip(base+delta, 0, 40) gives 5 *distinct* actions for both base=0
+# (only -20 is <=0) and base=20 (only +20 is >=20, landing exactly at the
+# 40mm ceiling with no clipping needed for any other delta):
+#   base=0:  clip([-20,5,10,15,20], 0,40) -> [0, 5,10,15,20]   (5 distinct)
+#   base=20: clip([0,25,30,35,40], 0,40)  -> [0,25,30,35,40]   (5 distinct)
+RESIDUAL_DELTAS = [-20.0, 5.0, 10.0, 15.0, 20.0]
 
 TRAIN_YEARS = list(range(1982, 2011))  # 1982 not 1981: a rotation year needs the prior autumn
 

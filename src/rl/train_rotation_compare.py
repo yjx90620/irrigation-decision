@@ -29,7 +29,9 @@ from config import SITES
 from residual_gym_env import (
     PREFERENCE_KEYS, RESIDUAL_DELTAS, STATE_KEYS, TRAIN_YEARS, RotationGymEnv,
 )
-from rotation_env import ACTIONS_MM, RotationIrrigationEnv, combine_reward, threshold_policy
+from rotation_env import (
+    ACTIONS_MM, RotationIrrigationEnv, combine_reward, quota_reserving_policy, threshold_policy,
+)
 from soils import STANDARD_SOILS
 
 TEST_YEARS = [2018, 2019, 2020, 2021, 2022]
@@ -50,9 +52,13 @@ OUT_DIR = Path(__file__).resolve().parents[2] / "data" / "processed"
 TRAIN_SITES = list(SITES)
 
 
-def _make_env(rank, mode, sites):
+def _make_env(rank, mode, sites, seed=0):
+    # same (seed, rank) -> same per-worker RNG stream regardless of mode,
+    # so direct/residual trained with the same seed see identical
+    # site/year/soil/preference sequences (P0-5, docs/审计修复计划.md)
     return RotationGymEnv(
-        mode=mode, sites=list(sites), soils=["loam"], years=TRAIN_YEARS, fixed_site=sites[rank % len(sites)],
+        mode=mode, sites=list(sites), soils=["loam"], years=TRAIN_YEARS,
+        fixed_site=sites[rank % len(sites)], seed=1000 * seed + rank,
     )
 
 
@@ -95,15 +101,22 @@ class SiteTransitionLogger(BaseCallback):
         }).to_csv(self.out_path, index=False)
 
 
-def train(mode, total_timesteps=TOTAL_TIMESTEPS, workers_per_site=WORKERS_PER_SITE, sites=TRAIN_SITES):
+def train(mode, total_timesteps=TOTAL_TIMESTEPS, workers_per_site=WORKERS_PER_SITE, sites=TRAIN_SITES, seed=0):
+    # P0-5 (docs/审计修复计划.md): direct and residual need paired seeds and
+    # identical scenario sequences to be a fair comparison, not each doing
+    # its own uncontrolled domain randomization. seed drives both SB3's own
+    # RNG (model init, action sampling) and, via RotationGymEnv.reset()'s
+    # P0-6b fix, every worker's site-year-soil-preference draw - so
+    # train('direct', seed=3) and train('residual', seed=3) see the same
+    # sequence of scenarios in the same order.
     n_envs = workers_per_site * len(sites)
-    run_name = f"ppo_rotation_{mode}"
-    env_fns = [functools.partial(_make_env, rank, mode, sites) for rank in range(n_envs)]
+    run_name = f"ppo_rotation_{mode}" if seed == 0 else f"ppo_rotation_{mode}_seed{seed}"
+    env_fns = [functools.partial(_make_env, rank, mode, sites, seed=seed) for rank in range(n_envs)]
     vec_env = SubprocVecEnv(env_fns)
     vec_env = VecNormalize(vec_env, norm_obs=True, norm_reward=False, clip_obs=10.0)
     model = PPO(
         "MlpPolicy", vec_env, verbose=1, n_steps=512, batch_size=256, n_epochs=10,
-        learning_rate=3e-4, gamma=GAMMA, ent_coef=0.01,
+        learning_rate=3e-4, gamma=GAMMA, ent_coef=0.01, seed=seed,
         device="cpu",  # measured: GPU gives ~1.12x here and SB3 warns against it for MlpPolicy
     )
     checkpoint_dir = OUT_DIR / "ppo_checkpoints"
@@ -180,23 +193,42 @@ def evaluate(policy_fn, label, sites=None, years=None):
     return pd.DataFrame(rows)
 
 
-def main():
-    frames = [evaluate(threshold_policy, "threshold_rule")]
-    print("rule baseline done")
+def main(n_seeds=1, seeds=None):
+    """P0-5 (docs/审计修复计划.md): n_seeds>1 trains/evaluates each mode
+    under multiple independent seeds instead of reporting one model as if
+    it were representative - each row is tagged with its seed so the
+    caller can report mean +/- std rather than a single run's number."""
+    seeds = seeds or list(range(n_seeds))
+    frames = [
+        evaluate(threshold_policy, "threshold_rule"),
+        evaluate(quota_reserving_policy, "quota_reserving_rule"),
+    ]
+    print("rule baselines done")
 
     for mode in ["direct", "residual"]:
-        model_path = OUT_DIR / f"ppo_rotation_{mode}_final.zip"
-        vecnorm_path = OUT_DIR / f"ppo_rotation_{mode}_final_vecnormalize.pkl"
-        if not model_path.exists():
-            print(f"=== training {mode} ===")
-            model_path, vecnorm_path = train(mode)
-        frames.append(evaluate(load_policy(model_path, vecnorm_path, mode), f"ppo_{mode}"))
-        print(f"{mode} evaluated")
+        for seed in seeds:
+            suffix = "" if seed == 0 else f"_seed{seed}"
+            model_path = OUT_DIR / f"ppo_rotation_{mode}{suffix}_final.zip"
+            vecnorm_path = OUT_DIR / f"ppo_rotation_{mode}{suffix}_final_vecnormalize.pkl"
+            if not model_path.exists():
+                print(f"=== training {mode} seed={seed} ===")
+                model_path, vecnorm_path = train(mode, seed=seed)
+            eval_df = evaluate(load_policy(model_path, vecnorm_path, mode), f"ppo_{mode}")
+            eval_df["seed"] = seed
+            frames.append(eval_df)
+            print(f"{mode} seed={seed} evaluated")
 
+    for frame in frames[:2]:
+        frame["seed"] = None  # rule baselines are deterministic, no seed axis
     out_path = OUT_DIR / "rotation_policy_comparison.csv"
     pd.concat(frames, ignore_index=True).to_csv(out_path, index=False)
     print(f"saved -> {out_path}")
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--n-seeds", type=int, default=1)
+    args = parser.parse_args()
+    main(n_seeds=args.n_seeds)

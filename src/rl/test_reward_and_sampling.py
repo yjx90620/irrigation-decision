@@ -9,7 +9,33 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "data"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "sim"))
 
-from residual_gym_env import RotationGymEnv
+from residual_gym_env import ACTIONS_MM, RESIDUAL_DELTAS, RotationGymEnv
+from rotation_env import quota_reserving_policy, threshold_policy
+
+
+def test_residual_deltas_do_not_collapse_under_clipping():
+    """P0-5: threshold_policy (the base policy residual corrects) only
+    ever outputs 0 or 20mm - both must yield 5 distinct clipped actions,
+    not fewer, or the residual policy has strictly fewer effectively
+    reachable actions than its action space size suggests."""
+    lo, hi = 0.0, max(ACTIONS_MM)
+    for base in (0.0, 20.0):
+        clipped = [max(lo, min(hi, base + d)) for d in RESIDUAL_DELTAS]
+        assert len(set(clipped)) == len(RESIDUAL_DELTAS), (
+            f"base={base}: deltas {RESIDUAL_DELTAS} collapse to {clipped}"
+        )
+
+
+def test_quota_reserving_policy_stops_wheat_before_exhausting_quota():
+    state = {"depletion_frac": 0.9, "is_wheat": 1.0, "remaining_annual_quota": 100.0}
+    # default wheat_reserve_frac=0.6 on a 450mm quota reserves 180mm for
+    # maize - 100mm remaining is below that, so wheat should NOT irrigate
+    assert quota_reserving_policy(state) == 0.0
+    state["remaining_annual_quota"] = 400.0
+    assert quota_reserving_policy(state) == 20.0
+    # maize is never subject to the wheat-only reserve check
+    maize_state = {"depletion_frac": 0.9, "is_wheat": 0.0, "remaining_annual_quota": 5.0}
+    assert quota_reserving_policy(maize_state) == 20.0
 
 
 def test_fixed_site_pins_every_episode():

@@ -348,3 +348,22 @@ def combine_reward(reward, weights):
 def threshold_policy(state, weights=None, threshold=0.4, depth=20.0):
     """Rule baseline, also the base policy that residual RL corrects."""
     return depth if state["depletion_frac"] > threshold else 0.0
+
+
+def quota_reserving_policy(
+    state, weights=None, threshold=0.4, depth=20.0, wheat_reserve_frac=0.6, annual_quota=ANNUAL_QUOTA_MM,
+):
+    """P0-5 (docs/审计修复计划.md): a stronger baseline than threshold_policy
+    - same depletion-threshold trigger, but wheat additionally stops
+    irrigating once it has used more than `wheat_reserve_frac` of the
+    *annual* quota, reserving the rest for maize instead of burning the
+    whole budget on wheat and leaving maize nothing (the specific failure
+    mode threshold_policy has - see this module's evaluate() results).
+    Comparing RL against only the weaker threshold_policy risks crediting
+    RL for beating a strawman rather than a rule that already encodes the
+    obvious fix."""
+    if state["depletion_frac"] <= threshold:
+        return 0.0
+    if state["is_wheat"] and state["remaining_annual_quota"] <= (1 - wheat_reserve_frac) * annual_quota:
+        return 0.0
+    return depth
