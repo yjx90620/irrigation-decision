@@ -89,6 +89,14 @@ class GymIrrigationEnv(gym.Env):
         # bug - a policy that only ever sees one fixed scenario per seed
         # wouldn't learn to condition on the preference vector.
         super().reset(seed=seed)
+        # P0-6b (docs/审计修复计划.md): the note above is about *ordinary*
+        # resets (seed=None) correctly continuing to advance self._rng - it
+        # doesn't mean an explicitly-passed seed should be a no-op, which
+        # it was before this fix (super().reset(seed=seed) only touches
+        # gymnasium's unused self.np_random). Re-seeding only when the
+        # caller actually asks for it keeps both properties true.
+        if seed is not None:
+            self._rng.seed(seed)
         if self._site_weights is not None:
             site_id = self._rng.choices(self.sites, weights=self._site_weights, k=1)[0]
         else:

@@ -74,11 +74,17 @@ def run_fold(target_site):
     zero_shot_fn = load_policy(src_model, src_vecnorm, "residual")
     zero_shot = evaluate(zero_shot_fn, "zero_shot", target_site)
 
-    ft_model, _ = train_rotation_policy(
+    ft_model, ft_vecnorm = train_rotation_policy(
         [target_site], "residual", FINETUNE_STEPS, f"transfer_rot_finetuned_{target_site}",
         base_model_path=src_model, base_vecnormalize_path=src_vecnorm,
     )
-    finetuned_fn = load_policy(ft_model, src_vecnorm, "residual")  # vecnorm stats carry over from source
+    # P0-6a (docs/审计修复计划.md): evaluate with the fine-tuned
+    # VecNormalize stats, not the source domain's - continuing training
+    # with norm_obs=True keeps updating the running mean/var, so
+    # evaluating against the stale source stats would feed the
+    # fine-tuned model observations normalized on a different
+    # distribution than the one its weights were actually tuned against.
+    finetuned_fn = load_policy(ft_model, ft_vecnorm, "residual")
     finetuned = evaluate(finetuned_fn, "finetuned", target_site)
 
     rule = evaluate(threshold_policy, "threshold_rule", target_site)

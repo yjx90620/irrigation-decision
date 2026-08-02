@@ -137,9 +137,28 @@ def train(mode, total_timesteps=TOTAL_TIMESTEPS, workers_per_site=WORKERS_PER_SI
     return model_path, vecnorm_path
 
 
-def load_policy(model_path, vecnorm_path, mode):
+def load_policy(model_path, vecnorm_path, mode, strict_pairing=True):
     from stable_baselines3.common.vec_env import DummyVecEnv
 
+    model_path, vecnorm_path = Path(model_path), Path(vecnorm_path)
+    if strict_pairing:
+        # P0-6a (docs/审计修复计划.md): leave_one_out_rotation.py's
+        # fine-tuning evaluation once loaded the *source* domain's
+        # VecNormalize stats instead of the fine-tuned model's own -
+        # normalization stats keep updating during training, so a
+        # mismatched pair feeds observations normalized against the
+        # wrong distribution. {run_name}_final.zip and
+        # {run_name}_final_vecnormalize.pkl share a run_name by
+        # train()'s/train_rotation_policy()'s own naming convention;
+        # this catches an accidental mismatch instead of silently
+        # evaluating with stale stats. Pass strict_pairing=False for a
+        # deliberate cross-run load (e.g. an explicit ablation).
+        run_name = model_path.name.removesuffix("_final.zip")
+        expected_vecnorm = model_path.with_name(f"{run_name}_final_vecnormalize.pkl")
+        assert vecnorm_path == expected_vecnorm, (
+            f"model {model_path.name} and vecnormalize {vecnorm_path.name} don't look like they came from the "
+            f"same training run (expected {expected_vecnorm.name}) - pass strict_pairing=False if intentional"
+        )
     model = PPO.load(str(model_path))
     dummy = DummyVecEnv([lambda: RotationGymEnv(mode=mode, sites=["hebei_central"], soils=["loam"], years=[2019])])
     obs_rms = VecNormalize.load(str(vecnorm_path), dummy).obs_rms

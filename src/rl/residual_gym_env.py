@@ -108,6 +108,17 @@ class RotationGymEnv(gym.Env):
 
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
+        # P0-6b (docs/审计修复计划.md): super().reset(seed=seed) only sets
+        # gymnasium's own self.np_random, which nothing here reads - the
+        # actual domain randomization draws from self._rng, a separate
+        # random.Random built once in __init__ and never reseeded by this
+        # call before this fix, so passing seed= to reset() was a no-op
+        # for site/year/soil/preference. Re-seeding only when seed is not
+        # None preserves normal domain randomization on ordinary resets
+        # (reset(seed=None) continues advancing self._rng's existing
+        # sequence rather than restarting it).
+        if seed is not None:
+            self._rng.seed(seed)
         site_id = self.fixed_site or self._rng.choice(self.sites)
         soil_key = self._rng.choice(self.soils)
         year = self._rng.choice(self.years)
