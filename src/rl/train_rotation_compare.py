@@ -39,17 +39,19 @@ TOTAL_TIMESTEPS = 400_000
 OUT_DIR = Path(__file__).resolve().parents[2] / "data" / "processed"
 
 
-# beijing_plain excluded: its short-cultivar wheat calendar combined with
-# specific weather years (confirmed for 2013 via scan_allocation.py's
-# bisection) drives AquaCrop's HIGC solver into a non-terminating state
-# regardless of irrigation policy. Domain randomization here samples site x
-# year uniformly, so keeping Beijing in the pool means the SubprocVecEnv
-# rollout has a standing chance of drawing a bad combo every batch, which
-# is consistent with training stalling on a stuck worker even after the
-# critical-depletion safety floor (see rotation_env.py) was added. Same
-# exclusion already applied in scan_allocation.py and task_sensitivity.py
-# for the identical underlying reason.
-TRAIN_SITES = [s for s in SITES if s != "beijing_plain"]
+# beijing_plain was excluded here (and in scan_allocation.py /
+# task_sensitivity.py) while the root cause was still unknown: its
+# short-cultivar wheat calendar combined with specific weather years
+# (year 2013) drove AquaCrop's calculate_HIGC solver into what looked
+# like a non-terminating state. That's now root-caused and patched
+# (patches/patch_aquacrop_higc.py, docs/aquacrop_patches.md) - it was a
+# genuine unbounded loop in the aquacrop-ospy package itself (a stressed
+# crop's collapsed calendar drives an internal variable negative, which
+# overflows an exp() and pins the loop's convergence target at 0
+# forever), not a Beijing-specific or RL-specific limitation. Verified
+# directly: the exact combo that used to hang indefinitely now completes
+# in ~2s. No reason left to exclude Beijing from anything.
+TRAIN_SITES = list(SITES)
 
 
 # Module-level factories, not closures: SubprocVecEnv pickles these to the
