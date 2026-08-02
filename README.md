@@ -33,9 +33,12 @@ src/
 ```bash
 python -m venv .venv
 .venv/Scripts/pip install -r requirements.txt
+.venv/Scripts/python patches/patch_aquacrop_higc.py
 ```
 
 CDS（AgERA5）需要在 `~/.cdsapirc` 配置个人 API key（去 https://cds.climate.copernicus.eu 免费注册获取），非必需——默认数据源是免注册的 Open-Meteo。
+
+`patches/patch_aquacrop_higc.py` 修复了 aquacrop-ospy 自身一个真正的无限循环 bug（严重水分胁迫下作物日历塌缩会让收获指数反推陷入死循环），是本项目多次"卡死"问题的根因，不是可选步骤——`.venv/` 不入库，每次重装环境都要重新跑一次；脚本本身幂等。详见 [docs/aquacrop_patches.md](docs/aquacrop_patches.md)。
 
 ## 数据与代码约定
 
