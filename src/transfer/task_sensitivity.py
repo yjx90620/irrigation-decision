@@ -52,12 +52,22 @@ from aquacrop import IrrigationManagement
 from config import SITES
 from rotation import run_rotation_series
 
-EVAL_YEARS = list(range(2011, 2021))  # 10 consecutive years
+# P1-1b (docs/审计修复计划.md): was range(2011,2021), which overlapped
+# 2018-2020 with the RL/optimization experiments' held-out TEST_YEARS
+# (2018-2022) - a "target-domain-independent" sensitivity metric was
+# quietly built partly from the period it's meant to help predict
+# transfer risk *for*. 2000-2009 is fully inside TRAIN_YEARS (1982-2010,
+# residual_gym_env.py) and disjoint from every test period used anywhere
+# in this project.
+EVAL_YEARS = list(range(2000, 2010))  # 10 consecutive years, all in TRAIN_YEARS
 COMBO_TIMEOUT_S = 90  # 10 years/policy normally takes ~10-15s; well past
 # that and it's the same class of pathological state found in scan_allocation.py
 
 OUT_PATH = Path(__file__).resolve().parents[2] / "data" / "processed" / "task_sensitivity.csv"
-PYTHON = Path(__file__).resolve().parents[2] / ".venv" / "Scripts" / "python.exe"
+# P1 (docs/审计修复计划.md): sys.executable, not a hardcoded venv path -
+# the previous version only worked on Windows with a venv at this exact
+# location relative to the repo.
+PYTHON = sys.executable
 
 
 def rainfed():
@@ -96,8 +106,16 @@ def compute_sensitivity(site_id: str, soil_key: str = "loam") -> dict:
     rain_yield = _run_policy_subprocess(site_id, soil_key, "rainfed")
     full_yield = _run_policy_subprocess(site_id, soil_key, "full")
 
+    # P1 补充 (docs/审计修复计划.md): a legitimate rainfed_yield of exactly
+    # 0.0 (complete crop failure under zero irrigation, plausible at the
+    # driest sites) is falsy in Python, so `rain_yield and ...` used to
+    # mark a real, computable, maximally-informative result (sensitivity
+    # == 1.0) as missing. Check for None (subprocess failure/timeout)
+    # explicitly instead of relying on truthiness.
     sensitivity = (
-        (full_yield - rain_yield) / full_yield if (full_yield and rain_yield and full_yield > 0) else float("nan")
+        (full_yield - rain_yield) / full_yield
+        if (full_yield is not None and rain_yield is not None and full_yield > 0)
+        else float("nan")
     )
     print(f"  {site_id}: rainfed={rain_yield} full={full_yield} sensitivity={sensitivity}", flush=True)
     return {

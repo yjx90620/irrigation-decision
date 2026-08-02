@@ -17,7 +17,7 @@ from config import SITES
 from cropping_systems import is_double_crop
 
 SCRIPT = Path(__file__).resolve().parent / "optimize_cross_season.py"
-PYTHON = Path(__file__).resolve().parents[2] / ".venv" / "Scripts" / "python.exe"
+PYTHON = sys.executable  # P1 (docs/审计修复计划.md): not a hardcoded venv path
 OUT_DIR = Path(__file__).resolve().parents[2] / "data" / "processed"
 
 POP_SIZE = 32

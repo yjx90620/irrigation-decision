@@ -22,7 +22,7 @@ import time
 from pathlib import Path
 
 CHECKPOINT_DIR = Path(__file__).resolve().parents[2] / "data" / "processed" / "ppo_checkpoints"
-PYTHON = Path(__file__).resolve().parents[2] / ".venv" / "Scripts" / "python.exe"
+PYTHON = sys.executable  # P1 (docs/审计修复计划.md): not a hardcoded venv path
 TRAIN_SCRIPT = Path(__file__).resolve().parent / "train_rotation_compare.py"
 
 STALL_TIMEOUT_S = 900  # 15 min - a healthy checkpoint interval is ~7-11 min

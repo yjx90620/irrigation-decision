@@ -4,23 +4,41 @@ temporal-transfer experiment.
 
 Method: delta change (a.k.a. the perturbation method). Rather than feeding
 raw model output into AquaCrop - which would inherit each model's
-systematic bias - this takes each model's *change signal* between its own
-historical run (1991-2010) and its future run (2031-2050), then applies
-that signal to the observed series. Comparing a model against itself
-cancels most of its bias, and the result keeps the observed record's
-day-to-day weather sequencing.
+systematic bias - this takes each model's *own* change signal between its
+own historical run (1991-2010) and its own future run (2031-2050), then
+averages those per-model signals across the 7-model ensemble, then applies
+the ensemble-mean signal to the observed series. Comparing a model against
+itself cancels most of its bias, and the result keeps the observed
+record's day-to-day weather sequencing.
 
-    temperature:   additive delta   (future_mean - historical_mean)
-    precipitation: multiplicative   (future_mean / historical_mean), so a
-                   dry site cannot be handed a negative rainfall total
+    temperature, humidity:  additive       (future_mean - historical_mean)
+    precipitation, radiation, wind: multiplicative (future_mean / historical_mean),
+                   so none of these strictly-positive quantities can be
+                   handed a negative value
+
+P1-2a (docs/审计修复计划.md): the previous version averaged each variable
+across models *first*, then took one difference/ratio between the two
+resulting series - "ensemble mean of the ratios" and "ratio of the
+ensemble means" are not the same computation (they're only equal for the
+additive/temperature case, which is linear), and the mismatch actually
+contradicted this module's own docstring, which always described the
+per-model-first method. Fixed by computing each model's own monthly
+delta/ratio first, then averaging *those* across models - also now
+restricted to the models present in *both* periods (a model with data in
+only one period no longer silently drops out of just one side's average).
 
 Deltas are computed per calendar month, because the monsoon's seasonal
-timing matters far more here than an annual mean would capture - and are
-averaged across the 7-model ensemble rather than trusting any one model.
+timing matters far more here than an annual mean would capture.
 
-ET0 is then *recomputed* from the perturbed temperatures via FAO-56 rather
-than being perturbed directly, so it stays physically consistent with the
-temperatures the crop model actually sees.
+P1-2b: previously only temperature was perturbed for the future ET0
+calculation - radiation, wind, and relative humidity kept using the
+*historical* observed values even though CMIP6's own future-period
+projections for all three were already downloaded and sitting unused.
+Now perturbed the same delta-change way as temperature/precipitation.
+
+ET0 is *recomputed* from the perturbed inputs via FAO-56 rather than
+having Open-Meteo's et0_fao_evapotranspiration column perturbed directly,
+so it stays physically consistent with the actual perturbed weather.
 """
 
 import sys
@@ -43,6 +61,18 @@ MODELS = [
     "EC_Earth3P_HR", "MPI_ESM1_2_XR", "NICAM16_8S",
 ]
 
+# (cmip6 column prefix, output delta name, mode) - mode is "additive" or
+# "multiplicative". Humidity is additive (a percentage-point shift, not a
+# ratio) but gets clipped to [0,100] when applied, not here.
+VARIABLES = [
+    ("temperature_2m_max", "d_temperature_2m_max", "additive"),
+    ("temperature_2m_min", "d_temperature_2m_min", "additive"),
+    ("precipitation_sum", "r_precipitation", "multiplicative"),
+    ("shortwave_radiation_sum", "r_radiation", "multiplicative"),
+    ("wind_speed_10m_mean", "r_wind", "multiplicative"),
+    ("relative_humidity_2m_mean", "d_humidity", "additive"),
+]
+
 
 def _load_period(site_id: str, period: str) -> pd.DataFrame:
     path = CMIP6_DIR / f"{site_id}_{period}_cmip6.csv"
@@ -54,30 +84,47 @@ def _load_period(site_id: str, period: str) -> pd.DataFrame:
     return df
 
 
-def _ensemble_monthly_mean(df: pd.DataFrame, variable: str) -> pd.Series:
-    """Average the per-model columns for `variable`, then take monthly means.
-    Models with no data for a site are skipped rather than poisoning the
-    ensemble with NaN."""
-    cols = [f"{variable}_{m}" for m in MODELS if f"{variable}_{m}" in df.columns]
-    usable = [c for c in cols if df[c].notna().any()]
-    if not usable:
-        raise ValueError(f"no usable model columns for {variable}")
-    ensemble = df[usable].mean(axis=1)
-    return ensemble.groupby(df["month"]).mean()
+def _per_model_monthly_means(df: pd.DataFrame, variable: str) -> dict:
+    """{model_name: monthly-mean Series}, models with no data for this
+    site/variable excluded rather than poisoning anything with NaN."""
+    out = {}
+    for model in MODELS:
+        col = f"{variable}_{model}"
+        if col in df.columns and df[col].notna().any():
+            out[model] = df.groupby(df["month"])[col].mean()
+    return out
+
+
+def _ensemble_delta(hist: pd.DataFrame, fut: pd.DataFrame, variable: str, mode: str) -> tuple:
+    """Per-model delta/ratio first, then averaged across models (P1-2a) -
+    restricted to models with usable data in *both* periods. Returns
+    (ensemble_mean, ensemble_std, n_models) - std so model disagreement
+    stays visible instead of only ever reporting the mean."""
+    hist_by_model = _per_model_monthly_means(hist, variable)
+    fut_by_model = _per_model_monthly_means(fut, variable)
+    common = sorted(set(hist_by_model) & set(fut_by_model))
+    if not common:
+        raise ValueError(f"no models with usable {variable} data in both periods")
+
+    if mode == "additive":
+        per_model = pd.DataFrame({m: fut_by_model[m] - hist_by_model[m] for m in common})
+    else:
+        # ratio, clipped: an ensemble ratio far outside this range in a dry/
+        # low month reflects a near-zero denominator rather than a credible signal
+        per_model = pd.DataFrame({
+            m: (fut_by_model[m] / hist_by_model[m].replace(0, np.nan)).clip(0.3, 3.0).fillna(1.0) for m in common
+        })
+    return per_model.mean(axis=1), per_model.std(axis=1), len(common)
 
 
 def compute_deltas(site_id: str) -> pd.DataFrame:
     hist, fut = _load_period(site_id, "historical"), _load_period(site_id, "future")
     deltas = pd.DataFrame(index=range(1, 13))
-
-    for var in ["temperature_2m_max", "temperature_2m_min"]:
-        deltas[f"d_{var}"] = _ensemble_monthly_mean(fut, var) - _ensemble_monthly_mean(hist, var)
-
-    hist_p = _ensemble_monthly_mean(hist, "precipitation_sum")
-    fut_p = _ensemble_monthly_mean(fut, "precipitation_sum")
-    # ratio, clipped: an ensemble ratio far outside this range in a dry month
-    # reflects a near-zero denominator rather than a credible signal
-    deltas["r_precipitation"] = (fut_p / hist_p.replace(0, np.nan)).clip(0.3, 3.0).fillna(1.0)
+    for cmip6_var, out_name, mode in VARIABLES:
+        mean, std, n_models = _ensemble_delta(hist, fut, cmip6_var, mode)
+        deltas[out_name] = mean
+        deltas[f"{out_name}_std"] = std
+        deltas.attrs[f"{out_name}_n_models"] = n_models
     return deltas
 
 
@@ -96,15 +143,22 @@ def build_future_weather(site_id: str, deltas: pd.DataFrame = None) -> pd.DataFr
     obs["Precipitation"] = obs["Precipitation"] * month.map(deltas["r_precipitation"]).values
 
     raw = pd.read_csv(next((Path(__file__).resolve().parents[2] / "data" / "raw" / "weather").glob(f"{site_id}_*_openmeteo.csv")))
+    future_radiation = raw["shortwave_radiation_sum"].values * month.map(deltas["r_radiation"]).values
+    future_wind = raw["wind_speed_10m_mean"].values * month.map(deltas["r_wind"]).values
+    future_humidity = np.clip(
+        raw["relative_humidity_2m_mean"].values + month.map(deltas["d_humidity"]).values, 0.0, 100.0
+    )
+
     obs["ReferenceET"] = np.maximum(
         penman_monteith_et0(
             tmax=obs["MaxTemp"].values,
             tmin=obs["MinTemp"].values,
-            rs=raw["shortwave_radiation_sum"].values,
-            wind10=raw["wind_speed_10m_mean"].values / 3.6,
-            rh_mean=raw["relative_humidity_2m_mean"].values,
+            rs=future_radiation,
+            wind10=future_wind / 3.6,
+            rh_mean=future_humidity,
             lat_deg=SITES[site_id]["lat"],
             doy=obs["Date"].dt.dayofyear.values,
+            elevation_m=SITES[site_id]["elevation_m"],  # P1-2c
         ),
         0.1,
     )
@@ -116,9 +170,12 @@ if __name__ == "__main__":
         try:
             d = compute_deltas(site_id)
             gs = d.loc[5:9]  # main growing-season months
+            n_models = d.attrs.get("r_precipitation_n_models", "?")
             print(
-                f"{site_id:22s} 生育期增温 {gs['d_temperature_2m_max'].mean():+.2f}°C  "
-                f"降水变化 {(gs['r_precipitation'].mean() - 1) * 100:+.1f}%"
+                f"{site_id:22s} ({n_models} models) 生育期增温 {gs['d_temperature_2m_max'].mean():+.2f}"
+                f"(+/-{gs['d_temperature_2m_max_std'].mean():.2f})°C  "
+                f"降水变化 {(gs['r_precipitation'].mean() - 1) * 100:+.1f}"
+                f"(+/-{gs['r_precipitation_std'].mean()*100:.1f})%"
             )
         except FileNotFoundError:
             print(f"{site_id:22s} (CMIP6 data not downloaded yet)")

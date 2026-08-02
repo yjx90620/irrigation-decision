@@ -13,9 +13,15 @@ Originally used wind_speed_10m_max (the only wind variable in the initial
 download) as if it were the day's representative wind, which inflated the
 aerodynamic term and gave a +0.31-0.50 mm/d bias across sites. Backfilled
 wind_speed_10m_mean (src/data/download_wind_mean.py) and switched to it
-here and in climate_scenario.py; bias is now -0.10 to -0.22 mm/d (roughly
-halved, and now a slight underestimate rather than an inflated one) with
-r=0.99+ unchanged at all 5 sites.
+here and in climate_scenario.py; bias dropped to -0.10 to -0.22 mm/d.
+
+Also defaulted elevation_m=50 for every site regardless of actual
+elevation (P1-2c, docs/审计修复计划.md) - most consequential at
+ningxia_irrigation (1112m) and shaanxi_guanzhong (472m), both far from
+the North China Plain sites' ~20-80m. Now uses each site's real
+elevation (config.py's SITES[...]["elevation_m"], from Open-Meteo's own
+elevation model); bias is now -0.13 to -0.20 mm/d, with the largest
+improvement at the two elevated sites as expected.
 """
 
 import sys
@@ -99,6 +105,7 @@ def validate_against_observed(site_id="hebei_central", n_days=3650):
         rh_mean=df["relative_humidity_2m_mean"].values,
         lat_deg=meta["lat"],
         doy=df["date"].dt.dayofyear.values,
+        elevation_m=meta["elevation_m"],  # P1-2c, docs/审计修复计划.md
     )
     reference = df["et0_fao_evapotranspiration"].values
     bias = np.nanmean(computed - reference)

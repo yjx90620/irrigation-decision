@@ -81,7 +81,7 @@ YEARS = [2011, 2013, 2015, 2017, 2018, 2020]
 
 OUT_DIR = Path(__file__).resolve().parents[2] / "data" / "processed"
 OUT_PATH = OUT_DIR / "allocation_scan.csv"  # merged output (all sites)
-PYTHON = Path(__file__).resolve().parents[2] / ".venv" / "Scripts" / "python.exe"
+PYTHON = sys.executable  # P1 (docs/审计修复计划.md): not a hardcoded venv path
 
 
 def _run_one_combo(site_id, soil_key, smt, wheat_cap, maize_cap) -> dict:
@@ -158,15 +158,28 @@ def main(site_id=None, soil_key="loam", smt_label=None, alpha=None):
             print(f"skip {site_id}: single-crop site, no wheat/maize split to scan")
             return
         out_path = OUT_DIR / f"allocation_scan_{site_id}.csv"
+        # P1-4 (docs/审计修复计划.md): a file existing isn't "done" if some
+        # of its rows are timeouts/failures - that used to get skipped on
+        # every future re-run, silently keeping bad rows forever instead
+        # of ever retrying them.
         if out_path.exists():
-            print(f"skip {site_id}, already scanned")
-            return
+            prior = pd.read_csv(out_path)
+            if "failure_reason" not in prior.columns or prior["failure_reason"].isna().all():
+                print(f"skip {site_id}, already scanned (no failures)")
+                return
+            print(f"{site_id}: prior scan has {prior['failure_reason'].notna().sum()} failed rows, re-scanning")
         scan_site(site_id).to_csv(out_path, index=False)
         print(f"saved -> {out_path}")
         return
 
     existing = pd.read_csv(OUT_PATH) if OUT_PATH.exists() else pd.DataFrame()
-    done = set(zip(existing["site_id"], existing["smt_level"])) if not existing.empty else set()
+    if not existing.empty and "failure_reason" in existing.columns:
+        failed = set(zip(existing.loc[existing["failure_reason"].notna(), "site_id"], existing.loc[existing["failure_reason"].notna(), "smt_level"]))
+    else:
+        failed = set()
+    done = set(zip(existing["site_id"], existing["smt_level"])) - failed if not existing.empty else set()
+    if failed and not existing.empty:
+        existing = existing[~existing.set_index(["site_id", "smt_level"]).index.isin(failed)]
 
     frames = [existing] if not existing.empty else []
     for sid in SITES:

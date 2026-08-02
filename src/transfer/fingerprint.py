@@ -1,18 +1,35 @@
 """Climate-soil environmental fingerprint per site (研究方案 6.4).
 
+P1-1 (docs/审计修复计划.md): two issues fixed here.
+
+1. The old version used one hardcoded single-season maize window
+   (05-01~09-15) for every site, which represents neither the winter
+   wheat -> summer maize double-cropping sites nor Ningxia's spring
+   maize system. Now uses the *same* calendar boundaries the actual
+   rotation model runs on (rotation.py's WHEAT_PLANTING/MAIZE_PLANTING/
+   MAIZE_HARVEST) split into a "cool season" (10/10-06/15, wheat's
+   growing window at double-crop sites) and "warm season" (06/15-10/05,
+   maize's window everywhere including Ningxia's actual spring-maize
+   season, which overlaps this window closely). Computed the same way
+   for every site regardless of what's actually planted there - it's a
+   calendar-based climate split, not a claim about what grows where -
+   plus an explicit cropping_system flag, so a downstream distance/
+   similarity computation can use both without conflating them.
+
+2. The old version used the full 1981-2025 weather record, including
+   years that other experiments (task_sensitivity.py, RL's TEST_YEARS,
+   etc.) hold out as an unseen test period - meaning a "target-domain-
+   independent" transfer risk predictor was quietly built partly from
+   the same period it would later be evaluated against. Restricted to
+   TRAIN_YEARS (matches src/rl/residual_gym_env.py's training split).
+
 Only the climate block actually differentiates sites right now: soil is
 still the same 3 standard AquaCrop profiles everywhere (SoilGrids access
-is blocked, see src/data/README.md), and management (planting date,
-seasonal water cap, decision interval) is currently a fixed project-wide
-setting rather than something calibrated per site. Sand/Clay fraction is
-left out entirely rather than faked - AquaCrop-OSPy's built-in soil
-classes expose hydraulic properties (th_fc, th_wp, th_s) but not texture
-fractions.
-
-GDD uses AquaCrop's own growing_degree_day() with the Maize crop's actual
-Tbase/Tupp (8/30 degC, GDDmethod=3) so this stays consistent with what
-the simulations in src/sim and src/rl actually use, rather than assuming
-a generic threshold.
+is blocked, see src/data/README.md), and the seasonal water cap/decision
+interval are fixed project-wide settings rather than something calibrated
+per site. Sand/Clay fraction is left out entirely rather than faked -
+AquaCrop-OSPy's built-in soil classes expose hydraulic properties
+(th_fc, th_wp, th_s) but not texture fractions.
 """
 
 import sys
@@ -20,25 +37,32 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "data"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "sim"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "rl"))
 
-import numpy as np
 import pandas as pd
 from aquacrop import Crop
 from aquacrop.solution.growing_degree_day import growing_degree_day
 
 from config import SITES
+from cropping_systems import is_double_crop
+from residual_gym_env import TRAIN_YEARS
+from rotation import MAIZE_HARVEST, MAIZE_PLANTING, WHEAT_PLANTING
 from soils import get_soil
 from weather import load_site_weather
 
-GROWING_SEASON_START = "05-01"
-GROWING_SEASON_END = "09-15"
 HOT_DAY_THRESHOLD_C = 33.0
+
+COOL_SEASON = (WHEAT_PLANTING, MAIZE_PLANTING)  # 10/10 - 06/15, wraps year end
+WARM_SEASON = (MAIZE_PLANTING, MAIZE_HARVEST)  # 06/15 - 10/05
+
+WHEAT_REF_CROP = Crop("WheatGDD", planting_date="10/10", harvest_date="06/25", Maturity=1, Senescence=1, HIstart=1)
+MAIZE_REF_CROP = Crop("Maize", planting_date="06/15", harvest_date="10/05")
 
 
 def _precipitation_concentration_index(daily: pd.DataFrame) -> float:
     """Oliver's PCI: 100 * sum(monthly_precip^2) / (sum(monthly_precip))^2,
-    over the full calendar year (not just the growing season) - standard
-    climatology definition of how concentrated rainfall is across months."""
+    over the full calendar year - standard climatology definition of how
+    concentrated rainfall is across months."""
     monthly = daily.groupby(daily["Date"].dt.month)["Precipitation"].sum()
     return float(100 * (monthly**2).sum() / (monthly.sum() ** 2))
 
@@ -50,47 +74,64 @@ def _max_consecutive_dry_days(precip: pd.Series, dry_threshold_mm: float = 1.0) 
     return float(run_lengths.max())
 
 
-def compute_site_fingerprint(site_id: str, crop: Crop) -> dict:
-    weather = load_site_weather(site_id)
-    weather["year"] = weather["Date"].dt.year
+def _season_mask(dates: pd.Series, start_md: str, end_md: str) -> pd.Series:
+    md = dates.dt.strftime("%m-%d")
+    if start_md <= end_md:
+        return (md >= start_md) & (md <= end_md)
+    return (md >= start_md) | (md <= end_md)  # wraps across year end (cool season)
 
-    season_mask = (weather["Date"].dt.strftime("%m-%d") >= GROWING_SEASON_START) & (
-        weather["Date"].dt.strftime("%m-%d") <= GROWING_SEASON_END
+
+def _season_stats(weather: pd.DataFrame, start_md_slash: str, end_md_slash: str, ref_crop: Crop, prefix: str) -> dict:
+    start_md, end_md = start_md_slash.replace("/", "-"), end_md_slash.replace("/", "-")
+    season = weather[_season_mask(weather["Date"], start_md, end_md)]
+    # cool season wraps the year boundary (Oct of year Y-1 -> Jun of year
+    # Y) - group by the *ending* calendar year so a full season lands in
+    # one group instead of splitting across two.
+    group_year = season["Date"].dt.year + (season["Date"].dt.strftime("%m-%d") >= "07-01").astype(int)
+
+    per_year_precip = season.groupby(group_year)["Precipitation"].sum()
+    per_year_et0 = season.groupby(group_year)["ReferenceET"].sum()
+    per_year_dry_spell = season.groupby(group_year)["Precipitation"].apply(_max_consecutive_dry_days)
+    per_year_hot_days = season.groupby(group_year).apply(
+        lambda g: (g["MaxTemp"] > HOT_DAY_THRESHOLD_C).sum(), include_groups=False
     )
-    season = weather[season_mask]
-
-    per_year_precip = season.groupby("year")["Precipitation"].sum()
-    per_year_et0 = season.groupby("year")["ReferenceET"].sum()
-    per_year_dry_spell = season.groupby("year")["Precipitation"].apply(_max_consecutive_dry_days)
-    per_year_hot_days = season.groupby("year").apply(lambda g: (g["MaxTemp"] > HOT_DAY_THRESHOLD_C).sum(), include_groups=False)
-    per_year_gdd = season.groupby("year").apply(
+    per_year_gdd = season.groupby(group_year).apply(
         lambda g: sum(
-            growing_degree_day(crop.GDDmethod, crop.Tupp, crop.Tbase, row.MaxTemp, row.MinTemp)
+            growing_degree_day(ref_crop.GDDmethod, ref_crop.Tupp, ref_crop.Tbase, row.MaxTemp, row.MinTemp)
             for row in g.itertuples()
         ),
         include_groups=False,
     )
-    pci = weather.groupby("year").apply(_precipitation_concentration_index, include_groups=False).mean()
-
-    P = per_year_precip.mean()
-    ET0 = per_year_et0.mean()
-
     return {
-        "site_id": site_id,
-        "P_mm": P,
-        "ET0_mm": ET0,
-        "aridity_index": P / ET0,
-        "CV_P": per_year_precip.std() / per_year_precip.mean(),
-        "max_dry_spell_days": per_year_dry_spell.mean(),
-        "hot_days": per_year_hot_days.mean(),
-        "GDD": per_year_gdd.mean(),
-        "PCI": pci,
+        f"{prefix}_precip_mm": per_year_precip.mean(),
+        f"{prefix}_et0_mm": per_year_et0.mean(),
+        f"{prefix}_gdd": per_year_gdd.mean(),
+        f"{prefix}_hot_days": per_year_hot_days.mean(),
+        f"{prefix}_dry_spell_days": per_year_dry_spell.mean(),
     }
 
 
+def compute_site_fingerprint(site_id: str) -> dict:
+    weather = load_site_weather(site_id)
+    weather = weather[weather["Date"].dt.year.isin(TRAIN_YEARS)].copy()
+
+    row = {"site_id": site_id, "cropping_system_double_crop": int(is_double_crop(site_id))}
+    row.update(_season_stats(weather, *COOL_SEASON, WHEAT_REF_CROP, "cool_season"))
+    row.update(_season_stats(weather, *WARM_SEASON, MAIZE_REF_CROP, "warm_season"))
+
+    weather["year"] = weather["Date"].dt.year
+    per_year_precip = weather.groupby("year")["Precipitation"].sum()
+    per_year_et0 = weather.groupby("year")["ReferenceET"].sum()
+    row["P_mm"] = per_year_precip.mean()
+    row["ET0_mm"] = per_year_et0.mean()
+    row["aridity_index"] = row["P_mm"] / row["ET0_mm"]
+    row["CV_P"] = per_year_precip.std() / per_year_precip.mean()
+    row["PCI"] = weather.groupby("year").apply(_precipitation_concentration_index, include_groups=False).mean()
+    return row
+
+
 def build_fingerprints() -> pd.DataFrame:
-    crop = Crop("Maize", planting_date="05/01", harvest_date="09/15")
-    rows = [compute_site_fingerprint(site_id, crop) for site_id in SITES]
+    rows = [compute_site_fingerprint(site_id) for site_id in SITES]
     df = pd.DataFrame(rows).set_index("site_id")
 
     # Soil block: constant across sites for now (same standard profile

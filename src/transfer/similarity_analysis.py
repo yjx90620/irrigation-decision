@@ -18,7 +18,16 @@ from sklearn.preprocessing import StandardScaler
 FINGERPRINT_PATH = Path(__file__).resolve().parents[2] / "data" / "processed" / "environmental_fingerprints.csv"
 OUT_DIR = Path(__file__).resolve().parents[2] / "data" / "processed"
 
-CLIMATE_FEATURES = ["P_mm", "ET0_mm", "aridity_index", "CV_P", "max_dry_spell_days", "hot_days", "GDD", "PCI"]
+# P1-1 (docs/审计修复计划.md): fingerprint.py now reports cool/warm season
+# stats (matching the actual rotation calendar) instead of one hardcoded
+# single-season window, plus a cropping-system flag.
+CLIMATE_FEATURES = [
+    "P_mm", "ET0_mm", "aridity_index", "CV_P", "PCI", "cropping_system_double_crop",
+    "cool_season_precip_mm", "cool_season_et0_mm", "cool_season_gdd",
+    "cool_season_hot_days", "cool_season_dry_spell_days",
+    "warm_season_precip_mm", "warm_season_et0_mm", "warm_season_gdd",
+    "warm_season_hot_days", "warm_season_dry_spell_days",
+]
 
 
 def main():
