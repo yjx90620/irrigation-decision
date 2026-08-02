@@ -64,6 +64,16 @@ LATE_SEASON_DAYS_TO_HARVEST = 7
 # that extreme in the first place.
 CRITICAL_DEPLETION_FRAC = 0.85
 CRITICAL_DEPLETION_MIN_MM = 20.0
+# ^ Even with this floor, training stalled again (1 of 8 SubprocVecEnv
+# workers pegged at 100% CPU while the other 7 sat idle waiting on it, for
+# 20+ continuous seconds - the classic "one straggler blocks the lockstep
+# rollout" signature). So 0.85 does not fully close the gap; there is
+# apparently at least one other path into a pathological state that this
+# specific guard doesn't catch. Rather than keep guessing at thresholds,
+# train_rotation_compare.py is now launched under an external watchdog
+# (run_training_with_watchdog.py) that kills and restarts on a stall
+# regardless of root cause - a general safety net instead of a specific
+# fix, since the specific fix has already failed to be complete twice.
 
 # Yield normalization per crop, so seasons contribute comparably to reward
 # despite maize out-yielding wheat. Values are near the top of what each
