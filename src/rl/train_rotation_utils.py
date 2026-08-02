@@ -20,7 +20,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback
-from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize
 
 from residual_gym_env import TRAIN_YEARS, RotationGymEnv
@@ -28,16 +27,23 @@ from residual_gym_env import TRAIN_YEARS, RotationGymEnv
 OUT_DIR = Path(__file__).resolve().parents[2] / "data" / "processed"
 
 
-def _make_env(sites, mode, soils=("loam",), years=TRAIN_YEARS):
-    return RotationGymEnv(mode=mode, sites=list(sites), soils=list(soils), years=list(years))
+def _make_env(rank, sites, mode, soils=("loam",), years=TRAIN_YEARS):
+    # P0-4 (docs/审计修复计划.md): one fixed site per worker rank, not
+    # domain-randomized per episode - see residual_gym_env.py's
+    # RotationGymEnv.fixed_site docstring for why (episode-length-driven
+    # transition-count skew across cropping systems).
+    return RotationGymEnv(
+        mode=mode, sites=list(sites), soils=list(soils), years=list(years), fixed_site=sites[rank % len(sites)],
+    )
 
 
 def train_rotation_policy(
-    sites, mode, total_timesteps, run_name, n_envs=8, checkpoint_every=None,
+    sites, mode, total_timesteps, run_name, workers_per_site=2, checkpoint_every=None,
     base_model_path=None, base_vecnormalize_path=None, ent_coef=0.01,
 ):
-    factory = functools.partial(_make_env, sites, mode)
-    vec_env = make_vec_env(factory, n_envs=n_envs, vec_env_cls=SubprocVecEnv)
+    n_envs = workers_per_site * len(sites)
+    env_fns = [functools.partial(_make_env, rank, sites, mode) for rank in range(n_envs)]
+    vec_env = SubprocVecEnv(env_fns)
 
     if base_model_path and base_vecnormalize_path:
         vec_env = VecNormalize.load(str(base_vecnormalize_path), vec_env)

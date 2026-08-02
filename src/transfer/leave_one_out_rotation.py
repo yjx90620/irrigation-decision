@@ -25,7 +25,7 @@ import pandas as pd
 
 from config import SITES
 from rotation_env import RotationIrrigationEnv, combine_reward, threshold_policy
-from train_rotation_compare import BALANCED_WEIGHTS, load_policy
+from train_rotation_compare import BALANCED_WEIGHTS, GAMMA, load_policy
 from train_rotation_utils import train_rotation_policy
 
 TEST_YEARS = [2018, 2019, 2020, 2021, 2022]
@@ -41,10 +41,13 @@ def evaluate(policy_fn, label, site_id, years=TEST_YEARS):
     for year in years:
         env = RotationIrrigationEnv(site_id, "loam", year)
         state = env.reset()
-        done, n_steps, n_mod, ret = False, 0, 0, 0.0
+        done, n_steps, n_mod = False, 0, 0
+        undiscounted_return, discounted_return = 0.0, 0.0
         while not done:
             state, reward, done, info = env.step(policy_fn(state, BALANCED_WEIGHTS))
-            ret += combine_reward(reward, BALANCED_WEIGHTS)
+            r = combine_reward(reward, BALANCED_WEIGHTS)
+            undiscounted_return += r
+            discounted_return += (GAMMA ** n_steps) * r
             n_steps += 1
             n_mod += int(info["action_modified"])
         rows.append({
@@ -52,7 +55,11 @@ def evaluate(policy_fn, label, site_id, years=TEST_YEARS):
             "total_yield_t_ha": info["total_yield_t_ha"],
             "total_irrigation_mm": info["total_irrigation_mm"],
             "action_modified_rate": n_mod / n_steps,
-            "scalar_return": ret,
+            # P0-4c (docs/审计修复计划.md): PPO optimizes the discounted
+            # return, not the flat sum - report both, don't call either
+            # one "scalar_return" as if it were unambiguous.
+            "undiscounted_return": undiscounted_return,
+            "discounted_return": discounted_return,
         })
     return pd.DataFrame(rows)
 

@@ -42,6 +42,23 @@ ANNUAL_QUOTA_MM = 450.0
 COST_WATER = 1.0
 COST_START = 5.0
 
+# P0-4 (docs/审计修复计划.md): the old reward added mean_stress every
+# single step (~120 accumulations across a double-crop episode) but only
+# added the actual yield outcome once or twice, so a policy optimizing
+# this reward was mostly optimizing accumulated stress-proxy, not yield.
+# Potential-based shaping (Ng, Harada & Russell 1999): F(s,a,s') = gamma *
+# Phi(s') - Phi(s) for any potential function Phi provably does not change
+# which policy is optimal, and telescopes to Phi(terminal) - Phi(initial)
+# over a full episode regardless of how many steps it took - so this
+# structurally fixes the "reward scales with episode length" problem
+# instead of just picking a small coefficient and hoping it's small
+# enough. Phi = tr_ratio (transpiration ratio, already in state, bounded
+# [0,1]) is a reasonable stand-in for "how well-watered is the crop right
+# now". SHAPING_GAMMA matches PPO's own discount (train_rotation_compare.py
+# uses gamma=0.995) - the invariance proof requires the same gamma the
+# policy is actually optimized under.
+SHAPING_GAMMA = 0.995
+
 # Safety layer thresholds (研究方案 5.8), same intent as env.py's
 SATURATION_DEPLETION_FRAC = 0.1
 HEAVY_RAIN_MM_3D = 20.0
@@ -157,7 +174,9 @@ class RotationIrrigationEnv:
         self.last_irr_mm = 0.0
         self.done = False
         self.season_results = {}
+        self._pending_yield_bonus = 0.0
         self._last_state = self._get_state()
+        self._potential = self._last_state["tr_ratio"]
         return self._last_state
 
     # --- observation -----------------------------------------------------
@@ -260,9 +279,12 @@ class RotationIrrigationEnv:
         else:
             self.days_since_last_irr += DECISION_INTERVAL_DAYS
 
-        mean_stress = float(np.mean(stress))
+        mean_stress = float(np.mean(stress))  # kept only for the risk indicator below
+        new_potential = float(self.model._init_cond.tr_ratio)
+        shaping_reward = SHAPING_GAMMA * new_potential - self._potential
+        self._potential = new_potential
         reward = {
-            "yield_proxy": mean_stress,
+            "yield_proxy": shaping_reward,
             "water": -applied / max(ACTIONS_MM),
             "cost": -(COST_WATER * applied + COST_START * (applied > 0)) / (COST_WATER * max(ACTIONS_MM) + COST_START),
             "risk": -1.0 if mean_stress < 0.5 else 0.0,
@@ -283,7 +305,12 @@ class RotationIrrigationEnv:
         if self.model._clock_struct.model_is_finished:
             th_end = self._finish_season()
             crop = self.current_crop
-            reward["yield_proxy"] += self.season_results[crop]["dry_yield_t_ha"] / YIELD_REFERENCE[crop]
+            # P0-4 (docs/审计修复计划.md): yield is banked here, not added
+            # to reward yet - paid out as a single system-level terminal
+            # reward when the whole rotation year ends (see `self.done`
+            # branch below), not once per crop, so a double-crop episode
+            # doesn't get 2x the terminal signal a single-crop one gets.
+            self._pending_yield_bonus += self.season_results[crop]["dry_yield_t_ha"] / YIELD_REFERENCE[crop]
 
             if crop == "wheat":
                 self._check_wheat_maize_handoff()
@@ -293,9 +320,16 @@ class RotationIrrigationEnv:
                     _wc_from_profile(th_end),
                 )
                 self.days_since_last_irr, self.last_irr_mm = 99, 0.0
+                # reset the shaping potential's baseline at the crop switch -
+                # otherwise the first maize step's shaping term would jump
+                # purely because maize's tr_ratio dynamics start from a
+                # different baseline than wheat's, not because of anything
+                # the policy did.
+                self._potential = float(self.model._init_cond.tr_ratio)
             else:
                 # end of the last (or only) season of the cycle
                 self.done = True
+                reward["yield_proxy"] += self._pending_yield_bonus
                 for name, res in self.season_results.items():
                     info[name] = res
                 info["total_yield_t_ha"] = sum(v["dry_yield_t_ha"] for v in self.season_results.values())
@@ -303,6 +337,7 @@ class RotationIrrigationEnv:
 
         state = self._get_state()
         self._last_state = state
+        info["site_id"] = self.site_id
         return state, reward, self.done, info
 
 

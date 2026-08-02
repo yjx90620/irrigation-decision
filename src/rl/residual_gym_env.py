@@ -58,11 +58,22 @@ def _sample_preference(rng):
 
 class RotationGymEnv(gym.Env):
     def __init__(self, mode="direct", sites=None, soils=None, years=None, seed=None,
-                 annual_quota=ANNUAL_QUOTA_MM, base_policy=threshold_policy):
+                 annual_quota=ANNUAL_QUOTA_MM, base_policy=threshold_policy, fixed_site=None):
+        """fixed_site (P0-4, docs/审计修复计划.md): when set, every reset()
+        uses this site instead of sampling from `sites`. Domain
+        randomization was previously uniform per-episode over sites, but
+        double-crop episodes run ~2.3x longer (~120 decision steps) than
+        Ningxia's single-crop ones (~53), so per-episode-uniform sampling
+        skews per-site *transition* counts even though episode counts are
+        balanced. Pinning one site per parallel worker (see
+        train_rotation_compare.py's env factories) and cycling workers
+        through all sites evenly is the fix - year/soil/preference stay
+        randomized within that site."""
         super().__init__()
         assert mode in ("direct", "residual")
         self.mode = mode
         self.sites = sites or list(SITES)
+        self.fixed_site = fixed_site
         self.soils = soils or list(STANDARD_SOILS)
         self.years = years or TRAIN_YEARS
         self.annual_quota = annual_quota
@@ -83,7 +94,7 @@ class RotationGymEnv(gym.Env):
 
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
-        site_id = self._rng.choice(self.sites)
+        site_id = self.fixed_site or self._rng.choice(self.sites)
         soil_key = self._rng.choice(self.soils)
         year = self._rng.choice(self.years)
         self.weights = _sample_preference(self._rng)

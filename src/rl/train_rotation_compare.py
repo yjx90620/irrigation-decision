@@ -11,7 +11,9 @@ yield under one annual quota), which is where the rule baseline visibly
 fails: it exhausts the quota on wheat and starves maize.
 """
 
+import functools
 import sys
+from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -20,8 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "data"))
 import numpy as np
 import pandas as pd
 from stable_baselines3 import PPO
-from stable_baselines3.common.callbacks import CheckpointCallback
-from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.callbacks import BaseCallback, CallbackList, CheckpointCallback
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize
 
 from config import SITES
@@ -33,58 +34,88 @@ from soils import STANDARD_SOILS
 
 TEST_YEARS = [2018, 2019, 2020, 2021, 2022]
 BALANCED_WEIGHTS = {"yield_proxy": 0.4, "water": 0.3, "cost": 0.2, "risk": 0.1}
-N_ENVS = 8
+GAMMA = 0.995  # must match PPO's own gamma below, for discounted_return to mean anything
+
+# P0-4 (docs/审计修复计划.md): WORKERS_PER_SITE * len(TRAIN_SITES) parallel
+# envs, one fixed site per worker (RotationGymEnv's fixed_site), cycling
+# evenly - not the old uniform-per-episode sampling, which skewed
+# transition counts toward double-crop sites since their episodes run
+# ~2.3x longer (~120 decision steps) than Ningxia's single-crop ones
+# (~53). N_ENVS=8 with 5 sites couldn't divide evenly; this can.
+WORKERS_PER_SITE = 2
 TOTAL_TIMESTEPS = 400_000
 
 OUT_DIR = Path(__file__).resolve().parents[2] / "data" / "processed"
 
-
-# beijing_plain was excluded here (and in scan_allocation.py /
-# task_sensitivity.py) while the root cause was still unknown: its
-# short-cultivar wheat calendar combined with specific weather years
-# (year 2013) drove AquaCrop's calculate_HIGC solver into what looked
-# like a non-terminating state. That's now root-caused and patched
-# (patches/patch_aquacrop_higc.py, docs/aquacrop_patches.md) - it was a
-# genuine unbounded loop in the aquacrop-ospy package itself (a stressed
-# crop's collapsed calendar drives an internal variable negative, which
-# overflows an exp() and pins the loop's convergence target at 0
-# forever), not a Beijing-specific or RL-specific limitation. Verified
-# directly: the exact combo that used to hang indefinitely now completes
-# in ~2s. No reason left to exclude Beijing from anything.
 TRAIN_SITES = list(SITES)
 
 
-# Module-level factories, not closures: SubprocVecEnv pickles these to the
-# worker processes, and Windows' spawn start method can't pickle a closure.
-def make_direct_env():
-    return RotationGymEnv(mode="direct", sites=list(TRAIN_SITES), soils=["loam"], years=TRAIN_YEARS)
+def _make_env(rank, mode, sites):
+    return RotationGymEnv(
+        mode=mode, sites=list(sites), soils=["loam"], years=TRAIN_YEARS, fixed_site=sites[rank % len(sites)],
+    )
 
 
-def make_residual_env():
-    return RotationGymEnv(mode="residual", sites=list(TRAIN_SITES), soils=["loam"], years=TRAIN_YEARS)
+class SiteTransitionLogger(BaseCallback):
+    """P0-4 (docs/审计修复计划.md): reports per-site episode/transition
+    counts the training actually saw, so an uneven sampling ratio would
+    be visible instead of assumed away. With fixed_site pinning this
+    should land close to WORKERS_PER_SITE / (WORKERS_PER_SITE * n_sites)
+    per site for both counts - if it doesn't, something upstream (an env
+    crashing/restarting more on one site, say) is still skewing things."""
+
+    def __init__(self, out_path, log_every=50_000, verbose=0):
+        super().__init__(verbose)
+        self.out_path = out_path
+        self.log_every = log_every
+        self.transitions = Counter()
+        self.episodes = Counter()
+        self._last_log = 0
+
+    def _on_step(self) -> bool:
+        for info, done in zip(self.locals["infos"], self.locals["dones"]):
+            site_id = info.get("site_id")
+            if site_id is None:
+                continue
+            self.transitions[site_id] += 1
+            if done:
+                self.episodes[site_id] += 1
+        if self.num_timesteps - self._last_log >= self.log_every:
+            self._last_log = self.num_timesteps
+            total = sum(self.transitions.values())
+            share = {k: f"{v / total:.1%}" for k, v in sorted(self.transitions.items())}
+            print(f"  [site transitions @ {self.num_timesteps}] {share}", flush=True)
+        return True
+
+    def _on_training_end(self) -> None:
+        pd.DataFrame({
+            "site_id": list(self.transitions),
+            "transitions": [self.transitions[s] for s in self.transitions],
+            "episodes": [self.episodes.get(s, 0) for s in self.transitions],
+        }).to_csv(self.out_path, index=False)
 
 
-ENV_FACTORIES = {"direct": make_direct_env, "residual": make_residual_env}
-
-
-def train(mode, total_timesteps=TOTAL_TIMESTEPS, n_envs=N_ENVS):
+def train(mode, total_timesteps=TOTAL_TIMESTEPS, workers_per_site=WORKERS_PER_SITE, sites=TRAIN_SITES):
+    n_envs = workers_per_site * len(sites)
     run_name = f"ppo_rotation_{mode}"
-    vec_env = make_vec_env(ENV_FACTORIES[mode], n_envs=n_envs, vec_env_cls=SubprocVecEnv)
+    env_fns = [functools.partial(_make_env, rank, mode, sites) for rank in range(n_envs)]
+    vec_env = SubprocVecEnv(env_fns)
     vec_env = VecNormalize(vec_env, norm_obs=True, norm_reward=False, clip_obs=10.0)
     model = PPO(
         "MlpPolicy", vec_env, verbose=1, n_steps=512, batch_size=256, n_epochs=10,
-        learning_rate=3e-4, gamma=0.995, ent_coef=0.01,
+        learning_rate=3e-4, gamma=GAMMA, ent_coef=0.01,
         device="cpu",  # measured: GPU gives ~1.12x here and SB3 warns against it for MlpPolicy
     )
     checkpoint_dir = OUT_DIR / "ppo_checkpoints"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    model.learn(
-        total_timesteps=total_timesteps,
-        callback=CheckpointCallback(
+    callback = CallbackList([
+        CheckpointCallback(
             save_freq=max(100_000 // n_envs, 1), save_path=str(checkpoint_dir),
             name_prefix=run_name, save_vecnormalize=True,
         ),
-    )
+        SiteTransitionLogger(OUT_DIR / f"{run_name}_site_transitions.csv"),
+    ])
+    model.learn(total_timesteps=total_timesteps, callback=callback)
     model_path = OUT_DIR / f"{run_name}_final.zip"
     vecnorm_path = OUT_DIR / f"{run_name}_final_vecnormalize.pkl"
     model.save(str(model_path))
@@ -119,10 +150,13 @@ def evaluate(policy_fn, label, sites=None, years=None):
         for year in (years or TEST_YEARS):
             env = RotationIrrigationEnv(site_id, "loam", year)
             state = env.reset()
-            done, n_steps, n_mod, ret = False, 0, 0, 0.0
+            done, n_steps, n_mod = False, 0, 0
+            undiscounted_return, discounted_return = 0.0, 0.0
             while not done:
                 state, reward, done, info = env.step(policy_fn(state, BALANCED_WEIGHTS))
-                ret += combine_reward(reward, BALANCED_WEIGHTS)
+                r = combine_reward(reward, BALANCED_WEIGHTS)
+                undiscounted_return += r
+                discounted_return += (GAMMA ** n_steps) * r
                 n_steps += 1
                 n_mod += int(info["action_modified"])
             # Single-crop sites (Ningxia) have no "wheat" key, so report
@@ -132,7 +166,11 @@ def evaluate(policy_fn, label, sites=None, years=None):
                 "total_yield_t_ha": info["total_yield_t_ha"],
                 "total_irrigation_mm": info["total_irrigation_mm"],
                 "action_modified_rate": n_mod / n_steps,
-                "scalar_return": ret,
+                # P0-4c (docs/审计修复计划.md): PPO optimizes the discounted
+                # return (gamma=0.995), not the flat sum - both are reported
+                # so neither gets mistaken for "what the model optimizes".
+                "undiscounted_return": undiscounted_return,
+                "discounted_return": discounted_return,
             }
             for crop in ("wheat", "maize", "spring_maize"):
                 if crop in info:
