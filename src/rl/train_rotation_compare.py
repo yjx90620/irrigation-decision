@@ -117,7 +117,7 @@ class SiteTransitionLogger(BaseCallback):
 
 
 def train(mode, total_timesteps=TOTAL_TIMESTEPS, workers_per_site=WORKERS_PER_SITE, sites=TRAIN_SITES,
-          seed=0, gamma=None):
+          seed=0, gamma=None, device="cpu"):
     # P0-5 (docs/审计修复计划.md): direct and residual need paired seeds and
     # identical scenario sequences to be a fair comparison, not each doing
     # its own uncontrolled domain randomization. seed drives both SB3's own
@@ -142,7 +142,12 @@ def train(mode, total_timesteps=TOTAL_TIMESTEPS, workers_per_site=WORKERS_PER_SI
     model = PPO(
         "MlpPolicy", vec_env, verbose=1, n_steps=512, batch_size=256, n_epochs=10,
         learning_rate=3e-4, gamma=eff_gamma, ent_coef=0.01, seed=seed,
-        device="cpu",  # measured: GPU gives ~1.12x here and SB3 warns against it for MlpPolicy
+        # device: measured ~1.12x on the RTX 3090 for this env-bound
+        # workload (AquaCrop steps dominate, the MLP is tiny) - CPU is the
+        # default so the gamma=0.995/1.0 arms are device-CONSISTENT (a
+        # device mismatch would confound the reward-comparison the audit
+        # P0-9 asks for). Pass device="cuda" only for exploratory arms.
+        device=device,
     )
     checkpoint_dir = OUT_DIR / "ppo_checkpoints"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)

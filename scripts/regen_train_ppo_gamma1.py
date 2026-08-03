@@ -28,7 +28,8 @@ def train_cmd(mode, seed):
         "import sys; sys.path.insert(0, 'src/rl'); sys.path.insert(0, 'src/data'); "
         "sys.path.insert(0, 'src/sim'); "
         "from train_rotation_compare import train; "
-        f"train(mode='{mode}', seed={seed}, gamma=1.0); print('TRAINED gamma1 {mode} seed={seed} OK', flush=True)",
+        f"train(mode='{mode}', seed={seed}, gamma=1.0, device='cuda'); "
+        f"print('TRAINED gamma1 {mode} seed={seed} OK', flush=True)",
     ]
 
 

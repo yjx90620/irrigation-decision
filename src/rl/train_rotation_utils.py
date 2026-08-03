@@ -39,7 +39,7 @@ def _make_env(rank, sites, mode, soils=("loam",), years=TRAIN_YEARS):
 
 def train_rotation_policy(
     sites, mode, total_timesteps, run_name, workers_per_site=2, checkpoint_every=None,
-    base_model_path=None, base_vecnormalize_path=None, ent_coef=0.01,
+    base_model_path=None, base_vecnormalize_path=None, ent_coef=0.01, device="cpu",
 ):
     n_envs = workers_per_site * len(sites)
     env_fns = [functools.partial(_make_env, rank, sites, mode) for rank in range(n_envs)]
@@ -48,12 +48,16 @@ def train_rotation_policy(
     if base_model_path and base_vecnormalize_path:
         vec_env = VecNormalize.load(str(base_vecnormalize_path), vec_env)
         vec_env.training = True
-        model = PPO.load(str(base_model_path), env=vec_env)
+        # audit-v2: PPO.load() defaults to device="auto" (CUDA if present)
+        # while fresh training here was hardcoded "cpu" - a source/finetune
+        # device mismatch is a subtle confound; use the caller's device for
+        # both paths.
+        model = PPO.load(str(base_model_path), env=vec_env, device=device)
     else:
         vec_env = VecNormalize(vec_env, norm_obs=True, norm_reward=False, clip_obs=10.0)
         model = PPO(
             "MlpPolicy", vec_env, verbose=0, n_steps=512, batch_size=256, n_epochs=10,
-            learning_rate=3e-4, gamma=0.995, ent_coef=ent_coef, device="cpu",
+            learning_rate=3e-4, gamma=0.995, ent_coef=ent_coef, device=device,
         )
 
     callback = None
