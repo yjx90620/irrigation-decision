@@ -142,11 +142,14 @@ def train(mode, total_timesteps=TOTAL_TIMESTEPS, workers_per_site=WORKERS_PER_SI
     model = PPO(
         "MlpPolicy", vec_env, verbose=1, n_steps=512, batch_size=256, n_epochs=10,
         learning_rate=3e-4, gamma=eff_gamma, ent_coef=0.01, seed=seed,
-        # device: measured ~1.12x on the RTX 3090 for this env-bound
-        # workload (AquaCrop steps dominate, the MLP is tiny) - CPU is the
-        # default so the gamma=0.995/1.0 arms are device-CONSISTENT (a
-        # device mismatch would confound the reward-comparison the audit
-        # P0-9 asks for). Pass device="cuda" only for exploratory arms.
+        # device: the workload is env-bound (AquaCrop numba steps dominate;
+        # the MLP is tiny). Solo, GPU measured only ~1.12x, but under CPU
+        # contention (multiple trainings + NSGA-II sharing the box) GPU
+        # offload of the NN update is worth ~6x (measured 25 -> 153 fps
+        # at 35+ concurrent processes). CPU stays the default so the
+        # gamma=0.995/1.0 arms are device-CONSISTENT (a device mismatch
+        # would confound the P0-9 reward comparison); pass device="cuda"
+        # for exploratory arms.
         device=device,
     )
     checkpoint_dir = OUT_DIR / "ppo_checkpoints"
