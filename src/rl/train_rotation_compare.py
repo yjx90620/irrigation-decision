@@ -125,12 +125,13 @@ def train(mode, total_timesteps=TOTAL_TIMESTEPS, workers_per_site=WORKERS_PER_SI
     # train('direct', seed=3) and train('residual', seed=3) see the same
     # sequence of scenarios in the same order.
     n_envs = workers_per_site * len(sites)
+    n_steps = 512  # PPO rollout length (also used for the checkpoint cadence below)
     run_name = f"ppo_rotation_{mode}" if seed == 0 else f"ppo_rotation_{mode}_seed{seed}"
     env_fns = [functools.partial(_make_env, rank, mode, sites, seed=seed) for rank in range(n_envs)]
     vec_env = SubprocVecEnv(env_fns)
     vec_env = VecNormalize(vec_env, norm_obs=True, norm_reward=False, clip_obs=10.0)
     model = PPO(
-        "MlpPolicy", vec_env, verbose=1, n_steps=512, batch_size=256, n_epochs=10,
+        "MlpPolicy", vec_env, verbose=1, n_steps=n_steps, batch_size=256, n_epochs=10,
         learning_rate=3e-4, gamma=GAMMA, ent_coef=0.01, seed=seed,
         device="cpu",  # measured: GPU gives ~1.12x here and SB3 warns against it for MlpPolicy
     )
