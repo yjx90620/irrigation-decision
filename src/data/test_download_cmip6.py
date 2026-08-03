@@ -41,14 +41,19 @@ def test_valid_frame_passes_and_reports_coverage():
     assert all(v == 1.0 for v in coverage.values())
 
 
-def test_empty_required_column_raises():
-    """An entirely-empty required variable-model column must fail - the
-    model would silently drop out of that variable's ensemble (the actual
-    CMCC_CM2_VHR4 shortwave_radiation hole in the shipped files)."""
+def test_empty_required_column_is_recorded_not_hidden():
+    """audit-v2 (P0-7): an entirely-empty required variable-model column
+    (the actual CMCC_CM2_VHR4 shortwave_radiation hole) does NOT hard-fail
+    the file - the re-download probe proved the gap is upstream (every
+    fresh API response has it), so a hard failure would kill the whole
+    dataset. Instead coverage[col] must be 0.0 so the manifest can carry
+    validation_status='degraded_model_gaps' and the consumer can drop the
+    model per-variable while REPORTING the ensemble size."""
     col = "shortwave_radiation_sum_CMCC_CM2_VHR4"
     df = _make_frame(empty_var_model=col)
-    with pytest.raises(DataValidationError, match="entirely empty"):
-        validate_cmip6_frame(df, START, END)
+    coverage = validate_cmip6_frame(df, START, END)
+    assert coverage[col] == 0.0
+    assert all(v == 1.0 for k, v in coverage.items() if k != col)
 
 
 def test_missing_dates_raise():
@@ -61,10 +66,11 @@ def test_duplicate_dates_raise():
         validate_cmip6_frame(_make_frame(duplicate_dates=True), START, END)
 
 
-def test_missing_column_raises():
+def test_missing_column_is_recorded_not_hidden():
     col = "wind_speed_10m_mean_EC_Earth3P_HR"
-    with pytest.raises(DataValidationError, match="entirely empty"):
-        validate_cmip6_frame(_make_frame(drop_column=col), START, END)
+    df = _make_frame(drop_column=col)
+    coverage = validate_cmip6_frame(df, START, END)
+    assert coverage[col] == 0.0
 
 
 def test_common_models_requires_both_periods():

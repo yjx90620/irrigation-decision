@@ -102,11 +102,21 @@ def _parse_date_series(df: pd.DataFrame) -> pd.Series:
 
 def validate_cmip6_frame(df: pd.DataFrame, start_date: str, end_date: str,
                          required_variables=None, expected_models=None) -> dict:
-    """Strict structural validation (audit-v2, P0-7). Raises
-    DataValidationError on date-range gaps, duplicates or unparseable
-    dates; returns a per-variable-model coverage dict (0..1) on success.
-    An entirely-empty REQUIRED column raises (the model silently dropping
-    out of the ensemble is exactly the failure mode this guards against)."""
+    """Structural validation (audit-v2, P0-7). Raises DataValidationError
+    on date-range gaps, duplicates or unparseable dates (hard failures);
+    returns a per-variable-model coverage dict (0..1) on success.
+
+    A REQUIRED variable-model column that is entirely empty does NOT raise:
+    the re-download probe proved the gap can be upstream (the Open-Meteo
+    HighResMIP API returns no shortwave radiation for CMCC_CM2_VHR4 at
+    all - every fresh download came back with the same empty column), so
+    a hard failure would make the whole CMIP6 dataset unusable forever.
+    Instead the file is written with coverage[col] = 0.0 and the manifest
+    marked `degraded_model_gaps`, and the CONSUMER (climate_scenario.py)
+    excludes that model from that variable's ensemble while REPORTING the
+    ensemble size (n_models per variable) - a loud, recorded degradation,
+    not a silent substitution (the audit forbids substituting another
+    model's values; it does not forbid explicitly dropping a model)."""
     required_variables = required_variables or REQUIRED_VARIABLES
     expected_models = expected_models or MODELS
     dates = _parse_date_series(df)
@@ -129,14 +139,9 @@ def validate_cmip6_frame(df: pd.DataFrame, start_date: str, end_date: str,
         for model in expected_models:
             col = f"{variable}_{model}"
             if col not in df.columns:
-                coverage[col] = 0.0  # counts as missing below
+                coverage[col] = 0.0
             else:
                 coverage[col] = float(df[col].notna().mean())
-            if coverage[col] == 0.0:
-                raise DataValidationError(
-                    f"required column '{col}' is entirely empty - the model would silently "
-                    f"drop out of this variable's ensemble"
-                )
     return coverage
 
 
@@ -205,9 +210,13 @@ def fetch(site_id, lat, lon, start, end) -> pd.DataFrame:
 def write_with_manifest(df: pd.DataFrame, out_path: Path, site_id: str, period: str,
                         start: str, end: str, coverage: dict) -> None:
     """Atomic write + manifest sidecar (audit-v2, P0-7). The CSV is only
-    placed in the formal directory after it passed validation; the
-    manifest records request params, coverage and the file hash so a
-    later run can verify the file is unchanged."""
+    placed in the formal directory after it passed STRUCTURAL validation;
+    the manifest records request params, per-column coverage and the file
+    hash so a later run can verify the file is unchanged. Files with
+    entirely-empty required columns (upstream model gaps, e.g. CMCC_CM2_VHR4
+    shortwave radiation) are written with validation_status =
+    'degraded_model_gaps' and the gap listed - the consumer must drop those
+    models per-variable and report the ensemble size."""
     atomic_write_csv(df, out_path)
     manifest = RunManifest(
         run_id=f"cmip6_{site_id}_{period}",
@@ -219,6 +228,8 @@ def write_with_manifest(df: pd.DataFrame, out_path: Path, site_id: str, period: 
     )
     manifest.finished_at = datetime.now(timezone.utc).isoformat()
     manifest_dict = manifest.to_dict()
+    empty_cols = [col for col, cov in coverage.items() if cov == 0.0]
+    validation_status = "degraded_model_gaps" if empty_cols else "complete"
     manifest_dict.update({
         "api_url": CLIMATE_URL,
         "site_id": site_id,
@@ -230,7 +241,8 @@ def write_with_manifest(df: pd.DataFrame, out_path: Path, site_id: str, period: 
         "field_coverage": coverage,
         "file_sha256": sha256_file(out_path),
         "license": "Open-Meteo Climate API (CC-BY 4.0 for data; see open-meteo.com)",
-        "validation_status": "complete",
+        "validation_status": validation_status,
+        "model_gaps": empty_cols,
     })
     from atomic_io import atomic_write_json
     atomic_write_json(out_path.with_suffix(".csv.manifest.json"), manifest_dict)
@@ -267,6 +279,16 @@ def main(quarantine_bad=True):
             except DataValidationError as exc:
                 print(f"  download failed validation: {exc} - NOT written to formal dir")
                 continue
+            empty_cols = [col for col, cov in coverage.items() if cov == 0.0]
+            if empty_cols:
+                # audit-v2 (P0-7): upstream model gaps are recorded, not
+                # hidden - the manifest carries validation_status=
+                # 'degraded_model_gaps' and the consumer must drop those
+                # models per-variable and REPORT the ensemble size.
+                print(f"  WARNING: {len(empty_cols)} required variable-model column(s) entirely empty "
+                      f"(upstream API gaps, e.g. {empty_cols[0]}): "
+                      f"written with validation_status='degraded_model_gaps' - "
+                      f"climate_scenario.py drops these models per-variable and reports n_models")
             write_with_manifest(df, out_path, site_id, period, start, end, coverage)
             print(f"  saved {len(df)} rows, {len(df.columns)} cols -> {out_path.name}")
 
