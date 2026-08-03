@@ -1,0 +1,1 @@
+检查重跑进度：GPU γ1（bg_85a63220，direct 波次完成后→residual 波次）、L2（bg_6901f586，1b→边际水价值→算法对比）。检查产出：marginal_water_value.csv、algorithm_comparison_*.csv、cross_season_pareto_1b_*.csv、γ1 的 ppo_rotation_*_gamma1*_final.zip 是否齐全（6 个）。γ1 全部完成后运行 scripts/evaluate_gamma1.py && scripts/compare_gamma_arms.py，对比 γ=1.0 vs 0.995 两臂的产量/用水，判断 γ1 是否关闭产量缺口、决定论文二主奖励配置（若 γ1 胜出则主臂切换、迁移需用 γ1 重跑）。向用户汇报。
