@@ -20,7 +20,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "utils"))
+
 from optimize_cross_season import BEST_FIXED_ALPHA
+from run_manifest import csv_result_complete
 
 SCRIPT = Path(__file__).resolve().parent / "optimize_cross_season.py"
 PYTHON = sys.executable  # P1 (docs/审计修复计划.md): not a hardcoded venv path
@@ -28,6 +31,9 @@ OUT_DIR = Path(__file__).resolve().parents[2] / "data" / "processed"
 
 POP_SIZE = 48
 N_GEN = 30
+
+# audit-v2 (P0-13): a result file that merely exists is not "done".
+RESULT_COLS = ["total_yield_t_ha", "total_irrigation_mm", "water_loss_mm", "yield_cv", "mode"]
 
 
 def main():
@@ -40,8 +46,8 @@ def main():
     backups = {}
     for site_id in BEST_FIXED_ALPHA:
         out_path = OUT_DIR / f"cross_season_pareto_1b_{site_id}_loam.csv"
-        if out_path.exists():
-            print(f"skip {site_id}, already done")
+        if csv_result_complete(out_path, RESULT_COLS, min_rows=1):
+            print(f"skip {site_id}, complete result exists")
             continue
         default_out = OUT_DIR / f"cross_season_pareto_{site_id}_loam.csv"
         if default_out.exists():

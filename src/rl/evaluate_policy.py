@@ -1,4 +1,9 @@
-"""Evaluation harness (研究方案 5.12): run any policy across a site x soil x
+"""DEPRECATED (audit-v2 P0-12): single-season prototype evaluation
+harness - its results were invalidated (see docs/AUDIT_FIX_LOG.md); the
+rotation-era comparison lives in src/rl/train_rotation_compare.py.
+
+Original docstring:
+Evaluation harness (研究方案 5.12): run any policy across a site x soil x
 year x preference grid and report metrics comparable to the baseline
 experiment grid (data/processed/baseline_experiment_results.csv) and the
 NSGA-II fronts, so RL policies can be judged against both.

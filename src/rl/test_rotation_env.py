@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "sim"))
 import pytest
 
 from cropping_systems import CROPPING_SYSTEMS, is_double_crop
-from rotation_env import CRITICAL_DEPLETION_MIN_MM, RotationIrrigationEnv
+from rotation_env import ACTIONS_MM, CRITICAL_DEPLETION_MIN_MM, RotationIrrigationEnv
 
 # worst-case (latest-maturing) years found by calibrate_wheat_maturity.py's
 # full-irrigation search, plus a couple of arbitrary others - not the full
@@ -74,3 +74,54 @@ def test_critical_depletion_shortfall_is_recorded_not_hidden():
     assert info["quota_used_mm"] == 0.0
     if info["safety_rule_triggered"] and "critical_depletion" in info["safety_rule_triggered"]:
         assert info["emergency_shortfall_mm"] >= CRITICAL_DEPLETION_MIN_MM - 1e-6
+
+
+# --- audit-v2 (P0-3): quota/rewards track ACTUAL applied water ------------
+
+def test_quota_accounting_uses_actual_model_delta():
+    """P0-3 (audit-v2): quota_used must track AquaCrop's ACTUAL applied
+    irrigation (irr_cum delta), not the requested depth - requesting 40mm
+    was measured to deliver a constant 25mm, so requested-depth accounting
+    over-counted water use by ~60% and the quota narrative described water
+    that was never applied."""
+    env = RotationIrrigationEnv("hebei_central", "loam", 2015, annual_quota=5000.0)
+    state = env.reset()
+    n_irrigated = 0
+    while not env.done:
+        irr_before = float(env.model._init_cond.irr_cum)
+        state, reward, done, info = env.step(40.0)
+        irr_delta = float(env.model._init_cond.irr_cum) - irr_before
+        assert info["actual_model_irrigation_mm"] == pytest.approx(max(0.0, irr_delta), abs=1e-6)
+        if info["actual_model_irrigation_mm"] > 0:
+            n_irrigated += 1
+        if n_irrigated > 50:
+            break
+    assert n_irrigated > 0
+
+
+def test_water_reward_uses_actual_not_requested():
+    """P0-3 (audit-v2): the water and cost reward terms are proportional to
+    the ACTUAL applied amount, not the requested depth."""
+    env = RotationIrrigationEnv("hebei_central", "loam", 2015, annual_quota=5000.0)
+    state = env.reset()
+    state, reward, done, info = env.step(40.0)
+    actual = info["actual_model_irrigation_mm"]
+    if actual > 0:
+        assert reward["water"] == pytest.approx(-actual / max(ACTIONS_MM))
+        assert reward["cost"] < 0.0
+    # requested 40mm but actual is capped by what the soil can hold: on
+    # loam this is 25mm (measured) - quota must have counted 25, not 40
+    assert env.quota_used == pytest.approx(actual, abs=1e-6)
+
+
+def test_episode_total_irrigation_matches_quota_used():
+    """P0-3 (audit-v2): at episode end the reported system irrigation
+    (sum of AquaCrop's seasonal irrigation) must be consistent with the
+    step-level quota accounting - both count the same actual water."""
+    env = RotationIrrigationEnv("hebei_central", "loam", 2015, annual_quota=5000.0)
+    state = env.reset()
+    while not env.done:
+        state, reward, done, info = env.step(40.0)
+    assert abs(info["total_irrigation_mm"] - env.quota_used) < 1.0, (
+        f"reported total {info['total_irrigation_mm']:.1f} mm vs quota_used {env.quota_used:.1f} mm"
+    )

@@ -1,4 +1,9 @@
-"""Leave-one-site-out transfer experiment (研究方案 7.2 / 10.1).
+"""DEPRECATED (audit-v2 P0-12): single-season prototype leave-one-out
+transfer - results invalidated (see docs/AUDIT_FIX_LOG.md); the
+rotation-era transfer is src/transfer/leave_one_out_rotation.py.
+
+Original docstring:
+Leave-one-site-out transfer experiment (研究方案 7.2 / 10.1).
 
 For each target site: train a "source" policy on the other 4 sites only
 (uniform sampling), evaluate it zero-shot on the target (no target data at

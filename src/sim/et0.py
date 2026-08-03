@@ -22,6 +22,20 @@ the North China Plain sites' ~20-80m. Now uses each site's real
 elevation (config.py's SITES[...]["elevation_m"], from Open-Meteo's own
 elevation model); bias is now -0.13 to -0.20 mm/d, with the largest
 improvement at the two elevated sites as expected.
+
+audit-v2 (P1-7), remaining documented assumptions and limitations:
+- actual vapour pressure uses ea = es(Tmean) x rh_mean/100 (FAO-56
+  approximation with mean relative humidity); a dew-point or RHmin/RHmax
+  formulation would be more faithful but the input data only provides
+  mean RH. The -0.13..-0.20 mm/d bias against Open-Meteo's ET0 is the
+  practical measure of the error this introduces.
+- ET0 is floored at 0 (no negative reference ET); the fraction of days
+  actually clamped is reported by validate_against_observed() so a
+  pathological series (e.g. grossly misaligned inputs) shows up as a
+  large clamp fraction instead of silently producing zero ET0 days.
+- validation threshold: |bias| < 0.3 mm/d and RMSE < 0.8 mm/d against
+  Open-Meteo's own et0_fao_evapotranspiration is treated as acceptable
+  for the delta-change scenarios (observed biases are ~0.13-0.20 mm/d).
 """
 
 import sys
@@ -111,10 +125,21 @@ def validate_against_observed(site_id="hebei_central", n_days=3650):
     bias = np.nanmean(computed - reference)
     rmse = np.sqrt(np.nanmean((computed - reference) ** 2))
     corr = np.corrcoef(computed[~np.isnan(reference)], reference[~np.isnan(reference)])[0, 1]
-    return {"bias": bias, "rmse": rmse, "corr": corr, "n": len(df)}
+    # P1-7 (audit-v2): report how many days the 0-floor actually clamped -
+    # a healthy series clamps ~0 days; a large fraction means the inputs
+    # are pathological and the zero-ET0 days would silently corrupt results.
+    n_clamped = int(np.sum(computed == 0.0))
+    return {
+        "bias": bias, "rmse": rmse, "corr": corr, "n": len(df),
+        "n_days_clamped_at_zero": n_clamped,
+        "clamp_fraction": n_clamped / len(df),
+    }
 
 
 if __name__ == "__main__":
     for site in ["hebei_central", "ningxia_irrigation", "shaanxi_guanzhong"]:
         stats = validate_against_observed(site)
-        print(f"{site:22s} bias={stats['bias']:+.3f} mm/d  rmse={stats['rmse']:.3f}  r={stats['corr']:.4f}")
+        print(
+            f"{site:22s} bias={stats['bias']:+.3f} mm/d  rmse={stats['rmse']:.3f}  r={stats['corr']:.4f}  "
+            f"clamped={stats['n_days_clamped_at_zero']}/{stats['n']} ({stats['clamp_fraction']:.3%})"
+        )

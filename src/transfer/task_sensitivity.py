@@ -132,9 +132,14 @@ def main(site_id=None, soil_key="loam", policy=None):
         return
 
     existing = pd.read_csv(OUT_PATH) if OUT_PATH.exists() else pd.DataFrame()
-    done = set(existing["site_id"]) if not existing.empty else set()
+    # audit-v2 (P0-13): a row that merely exists is not "done" - a site
+    # whose result has NaN/empty values must be recomputed, not skipped.
+    if not existing.empty and "sensitivity" in existing.columns:
+        done = set(existing.loc[existing["sensitivity"].notna(), "site_id"])
+    else:
+        done = set()
 
-    rows = [] if existing.empty else [existing]
+    rows = [] if existing.empty else [existing[existing["site_id"].isin(done)]]
     for sid in SITES:
         if sid in done:
             print(f"skip {sid}, already computed")

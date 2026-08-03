@@ -1,4 +1,9 @@
-"""Real (not smoke-test) PPO training run for the preference-conditioned
+"""DEPRECATED (audit-v2 P0-12): single-season prototype PPO training -
+results invalidated (see docs/AUDIT_FIX_LOG.md); the rotation-era
+training is src/rl/train_rotation_compare.py.
+
+Original docstring:
+Real (not smoke-test) PPO training run for the preference-conditioned
 irrigation policy (研究方案 5.9/5.10).
 
 Domain-randomizes over all 5 sites x 3 soils x the 1981-2010 train-year

@@ -56,6 +56,12 @@ from weather import load_site_weather
 
 CMIP6_DIR = Path(__file__).resolve().parents[2] / "data" / "raw" / "cmip6"
 
+
+class DataValidationError(RuntimeError):
+    """Input weather/CMIP6 data is incomplete or misaligned - fail loudly
+    rather than build a future series from silently wrong values
+    (audit-v2, P0-8)."""
+
 MODELS = [
     "CMCC_CM2_VHR4", "FGOALS_f3_H", "HiRAM_SIT_HR", "MRI_AGCM3_2_S",
     "EC_Earth3P_HR", "MPI_ESM1_2_XR", "NICAM16_8S",
@@ -142,11 +148,31 @@ def build_future_weather(site_id: str, deltas: pd.DataFrame = None) -> pd.DataFr
     obs["MinTemp"] = obs["MinTemp"] + month.map(deltas["d_temperature_2m_min"]).values
     obs["Precipitation"] = obs["Precipitation"] * month.map(deltas["r_precipitation"]).values
 
-    raw = pd.read_csv(next((Path(__file__).resolve().parents[2] / "data" / "raw" / "weather").glob(f"{site_id}_*_openmeteo.csv")))
-    future_radiation = raw["shortwave_radiation_sum"].values * month.map(deltas["r_radiation"]).values
-    future_wind = raw["wind_speed_10m_mean"].values * month.map(deltas["r_wind"]).values
+    # P0-8 (audit-v2): the radiation/wind/humidity drivers for the future
+    # ET0 were previously taken from the raw Open-Meteo file by ARRAY
+    # POSITION (`.values`), silently assuming the raw rows align with
+    # load_site_weather()'s rows - if the raw file ever covers a different
+    # date span or has a gap, every ET0 value downstream would be computed
+    # from misaligned weather without any error. Merge on date instead and
+    # fail loudly on any unaligned day.
+    raw = pd.read_csv(next((Path(__file__).resolve().parents[2] / "data" / "raw" / "weather").glob(
+        f"{site_id}_*_openmeteo.csv")))
+    raw["date"] = pd.to_datetime(raw["date"])
+    merged = obs.reset_index().merge(
+        raw[["date", "shortwave_radiation_sum", "wind_speed_10m_mean", "relative_humidity_2m_mean"]],
+        left_on="Date", right_on="date", how="left", validate="one_to_one",
+    )
+    required_drivers = ["shortwave_radiation_sum", "wind_speed_10m_mean", "relative_humidity_2m_mean"]
+    if merged[required_drivers].isna().any().any():
+        raise DataValidationError(
+            f"{site_id}: observed weather and raw Open-Meteo file do not align on "
+            f"{int(merged[required_drivers].isna().any(axis=1).sum())} day(s) - cannot build a "
+            f"physically consistent future weather series"
+        )
+    future_radiation = merged["shortwave_radiation_sum"].values * month.map(deltas["r_radiation"]).values
+    future_wind = merged["wind_speed_10m_mean"].values * month.map(deltas["r_wind"]).values
     future_humidity = np.clip(
-        raw["relative_humidity_2m_mean"].values + month.map(deltas["d_humidity"]).values, 0.0, 100.0
+        merged["relative_humidity_2m_mean"].values + month.map(deltas["d_humidity"]).values, 0.0, 100.0
     )
 
     obs["ReferenceET"] = np.maximum(
@@ -170,12 +196,20 @@ if __name__ == "__main__":
         try:
             d = compute_deltas(site_id)
             gs = d.loc[5:9]  # main growing-season months
-            n_models = d.attrs.get("r_precipitation_n_models", "?")
+            # P0-7 (audit-v2): report the per-variable ensemble size so a
+            # model silently dropping out (e.g. CMCC_CM2_VHR4 has no
+            # shortwave radiation in the current files) is visible, not
+            # hidden inside an unlabeled average.
+            n_models = {v: d.attrs.get(f"{v}_n_models", "?") for v in
+                        ["d_temperature_2m_max", "r_precipitation", "r_radiation", "r_wind", "d_humidity"]}
             print(
-                f"{site_id:22s} ({n_models} models) 生育期增温 {gs['d_temperature_2m_max'].mean():+.2f}"
+                f"{site_id:22s} 生育期增温 {gs['d_temperature_2m_max'].mean():+.2f}"
                 f"(+/-{gs['d_temperature_2m_max_std'].mean():.2f})°C  "
                 f"降水变化 {(gs['r_precipitation'].mean() - 1) * 100:+.1f}"
-                f"(+/-{gs['r_precipitation_std'].mean()*100:.1f})%"
+                f"(+/-{gs['r_precipitation_std'].mean()*100:.1f})%  "
+                f"n_models={n_models}"
             )
         except FileNotFoundError:
             print(f"{site_id:22s} (CMIP6 data not downloaded yet)")
+        except DataValidationError as exc:
+            print(f"{site_id:22s} INVALID CMIP6 data: {exc}")

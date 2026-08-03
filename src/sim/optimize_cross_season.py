@@ -135,7 +135,11 @@ def run(site_id, soil_key="loam", joint=True, fixed_alpha=0.5, pop_size=32, n_ge
     df["water_loss_mm"] = result.F[:, 2]
     df["yield_cv"] = result.F[:, 3]
     df["site_id"] = site_id
-    df["mode"] = mode_label or ("joint" if joint else "independent")
+    # P1-1 (audit-v2): "independent" was a misnomer - joint=False still
+    # co-optimizes both crops' SMT thresholds together, only the QUOTA SPLIT
+    # is pinned. It is a fixed-split joint SMT optimization, not an
+    # independent per-crop optimization; label it accordingly.
+    df["mode"] = mode_label or ("joint" if joint else f"fixed_split_alpha_{fixed_alpha:.2f}")
     return df
 
 

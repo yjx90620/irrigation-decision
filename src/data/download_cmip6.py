@@ -11,25 +11,39 @@ Downloads a 7-model ensemble for two windows:
   - future 2031-2050: mid-century. 2050 is the hard upper bound of the
     HighResMIP protocol these downscaled runs follow.
 
+audit-v2 (P0-7): the downloader previously treated "file exists" as
+"download complete" with no validation at all - which is how files with an
+entirely empty CMCC_CM2_VHR4 shortwave_radiation column and EC_Earth3P_HR
+future gaps (~365 missing days) got accepted into the dataset. Now every
+file is validated (date range complete, no duplicate dates, every required
+variable-model column present and non-empty), written atomically with a
+manifest sidecar, and any file that fails validation is moved to
+data/raw/cmip6/quarantine/ instead of being kept in the formal directory.
+Existing files are re-validated on every run, not skipped by existence.
+
 Note ET0 comes back as null from this API even though it's an accepted
 parameter, so the radiation/wind/humidity inputs needed to compute it via
 FAO-56 are downloaded instead - see src/sim/et0.py.
-
-All 7 models are requested in a single call per site/period (the API
-suffixes each variable with the model name), which keeps this to 10
-requests total rather than 70.
 """
 
+import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "utils"))
 
 import pandas as pd
 import requests
 
+from atomic_io import atomic_write_csv, sha256_file
 from config import SITES
+from run_manifest import RunManifest, save_manifest
 
 CLIMATE_URL = "https://climate-api.open-meteo.com/v1/climate"
 OUT_DIR = Path(__file__).resolve().parents[2] / "data" / "raw" / "cmip6"
+QUARANTINE_DIR = OUT_DIR / "quarantine"
 
 MODELS = [
     "CMCC_CM2_VHR4",
@@ -51,10 +65,94 @@ DAILY_VARS = [
     "relative_humidity_2m_mean",
 ]
 
+# audit-v2 (P0-7): the minimum set climate_scenario.py actually consumes
+# (temperature/precipitation drive the delta; radiation/wind/humidity are
+# perturbed for the ET0 recomputation). A required variable whose column is
+# entirely empty for a model invalidates the file - silently dropping the
+# model would change the ensemble the way the pre-fix data did (6-model
+# radiation vs 7-model temperature).
+REQUIRED_VARIABLES = [
+    "temperature_2m_max",
+    "temperature_2m_min",
+    "precipitation_sum",
+    "shortwave_radiation_sum",
+    "wind_speed_10m_mean",
+    "relative_humidity_2m_mean",
+]
+
 PERIODS = {
     "historical": ("1991-01-01", "2010-12-31"),
     "future": ("2031-01-01", "2050-12-31"),
 }
+
+
+class DataValidationError(RuntimeError):
+    """A CMIP6 file is incomplete or malformed - it must not enter (or
+    stay in) the formal dataset."""
+
+
+def _parse_date_series(df: pd.DataFrame) -> pd.Series:
+    if "date" not in df.columns:
+        raise DataValidationError("missing 'date' column")
+    dates = pd.to_datetime(df["date"], errors="coerce")
+    if dates.isna().any():
+        raise DataValidationError(f"{dates.isna().sum()} unparseable dates")
+    return dates
+
+
+def validate_cmip6_frame(df: pd.DataFrame, start_date: str, end_date: str,
+                         required_variables=None, expected_models=None) -> dict:
+    """Strict structural validation (audit-v2, P0-7). Raises
+    DataValidationError on date-range gaps, duplicates or unparseable
+    dates; returns a per-variable-model coverage dict (0..1) on success.
+    An entirely-empty REQUIRED column raises (the model silently dropping
+    out of the ensemble is exactly the failure mode this guards against)."""
+    required_variables = required_variables or REQUIRED_VARIABLES
+    expected_models = expected_models or MODELS
+    dates = _parse_date_series(df)
+
+    if dates.duplicated().any():
+        raise DataValidationError(f"{dates.duplicated().sum()} duplicate dates")
+
+    expected = pd.date_range(start_date, end_date, freq="D")
+    date_idx = pd.DatetimeIndex(dates)
+    missing = expected.difference(date_idx)
+    extra = date_idx.difference(expected)
+    if len(missing) or len(extra):
+        raise DataValidationError(
+            f"date range mismatch: {len(missing)} missing, {len(extra)} extra "
+            f"(expected {start_date}..{end_date}, {len(expected)} days)"
+        )
+
+    coverage = {}
+    for variable in required_variables:
+        for model in expected_models:
+            col = f"{variable}_{model}"
+            if col not in df.columns:
+                coverage[col] = 0.0  # counts as missing below
+            else:
+                coverage[col] = float(df[col].notna().mean())
+            if coverage[col] == 0.0:
+                raise DataValidationError(
+                    f"required column '{col}' is entirely empty - the model would silently "
+                    f"drop out of this variable's ensemble"
+                )
+    return coverage
+
+
+def common_models(hist_df: pd.DataFrame, fut_df: pd.DataFrame, variable: str) -> list:
+    """audit-v2 (P0-7): historical and future periods must share the same
+    usable model set for each variable - averaging 'whatever each side has'
+    silently compares different ensembles (the old per-period bug)."""
+    def usable(df):
+        return {m for m in MODELS if f"{variable}_{m}" in df.columns and df[f"{variable}_{m}"].notna().any()}
+    common = sorted(usable(hist_df) & usable(fut_df))
+    if len(common) < 3:
+        raise DataValidationError(
+            f"'{variable}': only {len(common)} model(s) usable in BOTH periods - "
+            f"cannot pair historical/future ensembles"
+        )
+    return common
 
 
 def fetch(site_id, lat, lon, start, end) -> pd.DataFrame:
@@ -104,20 +202,83 @@ def fetch(site_id, lat, lon, start, end) -> pd.DataFrame:
     raise RuntimeError(f"gave up on {site_id} {start}..{end} after 6 attempts - re-run later to resume")
 
 
-def main():
+def write_with_manifest(df: pd.DataFrame, out_path: Path, site_id: str, period: str,
+                        start: str, end: str, coverage: dict) -> None:
+    """Atomic write + manifest sidecar (audit-v2, P0-7). The CSV is only
+    placed in the formal directory after it passed validation; the
+    manifest records request params, coverage and the file hash so a
+    later run can verify the file is unchanged."""
+    atomic_write_csv(df, out_path)
+    manifest = RunManifest(
+        run_id=f"cmip6_{site_id}_{period}",
+        task_name="download_cmip6",
+        config_sha256="",
+        input_sha256={},
+        status="complete",
+        output_files=[str(out_path)],
+    )
+    manifest.finished_at = datetime.now(timezone.utc).isoformat()
+    manifest_dict = manifest.to_dict()
+    manifest_dict.update({
+        "api_url": CLIMATE_URL,
+        "site_id": site_id,
+        "period": period,
+        "coordinates": {"lat": SITES[site_id]["lat"], "lon": SITES[site_id]["lon"]},
+        "models": MODELS,
+        "variables": DAILY_VARS,
+        "date_range": {"start": start, "end": end},
+        "field_coverage": coverage,
+        "file_sha256": sha256_file(out_path),
+        "license": "Open-Meteo Climate API (CC-BY 4.0 for data; see open-meteo.com)",
+        "validation_status": "complete",
+    })
+    from atomic_io import atomic_write_json
+    atomic_write_json(out_path.with_suffix(".csv.manifest.json"), manifest_dict)
+
+
+def main(quarantine_bad=True):
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+    QUARANTINE_DIR.mkdir(parents=True, exist_ok=True)
     for site_id, meta in SITES.items():
         for period, (start, end) in PERIODS.items():
             out_path = OUT_DIR / f"{site_id}_{period}_cmip6.csv"
+            # audit-v2 (P0-7): existence is not validity - re-validate
+            # every file on every run.
             if out_path.exists():
-                print(f"skip {site_id} {period}, already downloaded")
-                continue
+                try:
+                    df = pd.read_csv(out_path)
+                    coverage = validate_cmip6_frame(df, start, end)
+                    print(f"valid   {out_path.name} ({len(df)} rows, all required columns non-empty)")
+                    continue
+                except DataValidationError as exc:
+                    print(f"INVALID {out_path.name}: {exc}")
+                    if quarantine_bad:
+                        dest = QUARANTINE_DIR / out_path.name
+                        out_path.replace(dest)
+                        print(f"  -> moved to quarantine/ ({dest.name})")
+                    continue
+
             print(f"downloading {site_id} {period} ({start}..{end}) x {len(MODELS)} models ...")
-            df = fetch(site_id, meta["lat"], meta["lon"], start, end)
-            df.to_csv(out_path, index=False)
+            try:
+                df = fetch(site_id, meta["lat"], meta["lon"], start, end)
+                coverage = validate_cmip6_frame(df, start, end)
+            except DataValidationError as exc:
+                print(f"  download failed validation: {exc} - NOT written to formal dir")
+                continue
+            write_with_manifest(df, out_path, site_id, period, start, end, coverage)
             print(f"  saved {len(df)} rows, {len(df.columns)} cols -> {out_path.name}")
-            time.sleep(5)
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--check-only", action="store_true",
+                        help="validate existing files and report, without quarantining or downloading")
+    parser.add_argument("--no-quarantine", action="store_true",
+                        help="report invalid files but leave them in place")
+    args = parser.parse_args()
+    if args.check_only:
+        main(quarantine_bad=False)
+    else:
+        main(quarantine_bad=not args.no_quarantine)

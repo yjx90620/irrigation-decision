@@ -1,5 +1,13 @@
-"""Preference-conditioned irrigation decision environment (研究方案 5.4-5.6).
+"""DEPRECATED (audit-v2 P0-12): single-season prototype environment.
 
+This is the pre-upgrade single-crop env (each season starts near field
+capacity, no rotation, no annual quota) whose results were archived to
+data/processed/invalidated/legacy_v1/ as NOT valid for final claims.
+The rotation-era environment is src/rl/rotation_env.py; do not build new
+experiments on this module.
+
+Original docstring (development record):
+Preference-conditioned irrigation decision environment (研究方案 5.4-5.6).
 Wraps AquaCropModel for day-by-day external control: irrigation_method=5
 ("constant depth") reads `param_struct.IrrMngt.depth` fresh every simulated
 day, so mutating it between calls to `run_model(num_steps=..., initialize_model=False)`
@@ -12,20 +20,16 @@ subsequent zero-depth days).
 The simulation window starts at the planting date rather than Jan 1: before
 planting AquaCrop runs a "fallow" sub-model that ignores our IrrMngt object
 entirely, which would make early actions silently no-ops.
-
-Decision interval is 3 days (研究方案 5.4), action is a single irrigation
-pulse applied on the first day of each window, passed through a rule-based
-safety layer (研究方案 5.8) before being handed to AquaCrop. Reward is a
-4-vector [yield_proxy, water, cost, risk] combined via the caller-supplied
-preference weights - see combine_reward(). The yield_proxy uses the
-season's transpiration ratio (1.0 = no water stress) as a per-step proxy
-since true yield is only known at harvest, plus a final-day bonus from
-actual Dry yield normalized against that site's full-irrigation ceiling
-(read from data/processed/baseline_experiment_results.csv, the 5400-run
-baseline grid - soil type barely moves the full-irrigation yield since
-full irrigation removes water stress regardless of the soil's holding
-capacity, so the ceiling is keyed by site only).
 """
+
+import sys
+import warnings
+from pathlib import Path
+
+warnings.warn(
+    "src/rl/env.py is the DEPRECATED single-season prototype environment "
+    "(results invalidated, see docs/AUDIT_FIX_LOG.md P0-12); use "
+    "src/rl/rotation_env.py instead", DeprecationWarning, stacklevel=2)
 
 import sys
 from pathlib import Path

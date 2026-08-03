@@ -23,14 +23,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "sim"))
 
 import numpy as np
 import pandas as pd
-from aquacrop import AquaCropModel, Crop, InitialWaterContent, IrrigationManagement
+from aquacrop import AquaCropModel, InitialWaterContent, IrrigationManagement
 
 from cropping_systems import (
-    SPRING_MAIZE_HARVEST, SPRING_MAIZE_PLANTING, is_double_crop, wheat_params_for,
+    MAIZE_HARVEST, MAIZE_PLANTING, SPRING_MAIZE_HARVEST, SPRING_MAIZE_PLANTING,
+    WHEAT_HARVEST, WHEAT_PLANTING, build_crop, is_double_crop,
 )
-from rotation import (
-    MAIZE_HARVEST, MAIZE_PLANTING, WHEAT_HARVEST, WHEAT_PLANTING, _wc_from_profile,
-)
+from rotation import RotationCalendarError, _wc_from_profile
 from soil_moisture_init import initial_water_content as observed_initial_wc
 from soils import get_soil
 from weather import load_site_weather
@@ -80,10 +79,12 @@ CRITICAL_DEPLETION_MIN_MM = 20.0
 
 # Yield normalization per crop, so seasons contribute comparably to reward
 # despite maize out-yielding wheat. Values are near the top of what each
-# system produces under generous irrigation (measured: wheat ~6.5-7,
-# double-crop maize ~8.8-9, Ningxia spring maize ~14.4 - the single-crop
-# season is much longer and yields far more).
-YIELD_REFERENCE = {"wheat": 7.0, "maize": 9.0, "spring_maize": 14.5}
+# system produces under generous irrigation. Measured with the audit-v2
+# cultivar fixes (P0-2): wheat ~6.5-7, double-crop summer maize now
+# ~10.3-11.6 (the old 9.0 reference came from the truncated 132-day stock
+# cultivar, which never reached maturity inside the 112-day window),
+# Ningxia spring maize ~13.5-14.8.
+YIELD_REFERENCE = {"wheat": 7.0, "maize": 11.5, "spring_maize": 14.5}
 
 
 def safety_filter(action_mm, state, days_to_harvest, remaining_quota):
@@ -129,16 +130,12 @@ class RotationIrrigationEnv:
         self._weather = load_site_weather(site_id)
 
     # --- season plumbing -------------------------------------------------
-    def _start_season(self, crop_name, sim_start, sim_end, initial_wc):
-        if crop_name == "wheat":
-            crop = Crop(
-                "WheatGDD", planting_date=WHEAT_PLANTING, harvest_date=WHEAT_HARVEST,
-                **wheat_params_for(self.site_id),
-            )
-        elif crop_name == "spring_maize":
-            crop = Crop("Maize", planting_date=SPRING_MAIZE_PLANTING, harvest_date=SPRING_MAIZE_HARVEST)
-        else:
-            crop = Crop("Maize", planting_date=MAIZE_PLANTING, harvest_date=MAIZE_HARVEST)
+    def _start_season(self, crop_name, sim_start, sim_end, initial_wc, off_season=False):
+        # P0-2 (audit-v2): crops are built by cropping_systems.build_crop(),
+        # the single place that knows each site's cultivar - the old inline
+        # Crop("WheatGDD"/"Maize") construction here is how the wrong
+        # 132-day stock maize slipped into the 112-day summer window.
+        crop = build_crop(self.site_id, crop_name)
         model = AquaCropModel(
             sim_start_time=sim_start,
             sim_end_time=sim_end,
@@ -147,12 +144,30 @@ class RotationIrrigationEnv:
             crop=crop,
             initial_water_content=initial_wc,
             irrigation_management=IrrigationManagement(irrigation_method=5, depth=0),
+            off_season=off_season,
         )
         model._initialize()
         self.model = model
         self.current_crop = crop_name
         planting = pd.Timestamp(sim_start.replace("/", "-"))
         self.season_days = (pd.Timestamp(sim_end.replace("/", "-")) - planting).days
+
+    def _advance_to_planting(self):
+        """P0-1 (audit-v2): fast-forward an off-season window from its
+        start (the day after wheat's actual harvest) to the maize planting
+        day, simulating the fallow days' bare-soil water balance with zero
+        irrigation. The policy only decides from planting onward - the
+        fallow itself is not a decision period, but its effect on the
+        profile maize inherits IS simulated (previously skipped entirely)."""
+        planting = pd.Timestamp(f"{self.year}-{MAIZE_PLANTING.replace('/', '-')}")
+        self.model._param_struct.IrrMngt.depth = 0
+        while pd.Timestamp(self.model._clock_struct.step_start_time) < planting:
+            if self.model._clock_struct.model_is_finished:
+                raise RotationCalendarError(
+                    f"{self.site_id} {self.year}: model finished before maize planting during fallow "
+                    f"advance - check the summer-maize cultivar (cropping_systems.SUMMER_MAIZE_PARAMS)"
+                )
+            self.model.run_model(num_steps=1, initialize_model=False)
 
     def reset(self):
         self.double_crop = is_double_crop(self.site_id)
@@ -239,8 +254,6 @@ class RotationIrrigationEnv:
         wheat_harvest_date = pd.Timestamp(self.season_results["wheat"]["harvest_date"])
         gap_days = (maize_planting_date - wheat_harvest_date).days
         if gap_days < 0:
-            from rotation import RotationCalendarError
-
             raise RotationCalendarError(
                 f"{self.site_id} {self.year}: wheat harvested {wheat_harvest_date.date()}, on/after maize's "
                 f"fixed planting date {maize_planting_date.date()} ({-gap_days} day(s) late) - recalibrate "
@@ -261,7 +274,16 @@ class RotationIrrigationEnv:
         )
 
         self.model._param_struct.IrrMngt.depth = applied
+        # P0-3 (audit-v2): AquaCrop applies at most what the soil profile
+        # can actually hold on the decision day - requesting 40mm delivered
+        # a constant 25mm across every step (measured) - so quota and the
+        # water/cost rewards must account for the ACTUAL applied amount
+        # (irr_cum delta), not the requested depth, or training over-counts
+        # water use by ~60% and the quota narrative describes a water
+        # volume that was never applied.
+        irr_before = float(self.model._init_cond.irr_cum)
         self.model.run_model(num_steps=1, initialize_model=False)
+        actual_applied = max(0.0, float(self.model._init_cond.irr_cum) - irr_before)
         stress = [self.model._init_cond.tr_ratio]
         self.model._param_struct.IrrMngt.depth = 0
         for _ in range(DECISION_INTERVAL_DAYS - 1):
@@ -270,12 +292,12 @@ class RotationIrrigationEnv:
             self.model.run_model(num_steps=1, initialize_model=False)
             stress.append(self.model._init_cond.tr_ratio)
 
-        self.quota_used += applied
+        self.quota_used += actual_applied
         assert self.quota_used <= self.annual_quota + 1e-6, (
             f"quota_used {self.quota_used} exceeded annual_quota {self.annual_quota} - P0-2 hard-cap violated"
         )
-        if applied > 0:
-            self.days_since_last_irr, self.last_irr_mm = 0, applied
+        if actual_applied > 0:
+            self.days_since_last_irr, self.last_irr_mm = 0, actual_applied
         else:
             self.days_since_last_irr += DECISION_INTERVAL_DAYS
 
@@ -285,16 +307,19 @@ class RotationIrrigationEnv:
         self._potential = new_potential
         reward = {
             "yield_proxy": shaping_reward,
-            "water": -applied / max(ACTIONS_MM),
-            "cost": -(COST_WATER * applied + COST_START * (applied > 0)) / (COST_WATER * max(ACTIONS_MM) + COST_START),
+            "water": -actual_applied / max(ACTIONS_MM),
+            "cost": -(COST_WATER * actual_applied + COST_START * (actual_applied > 0))
+            / (COST_WATER * max(ACTIONS_MM) + COST_START),
             "risk": -1.0 if mean_stress < 0.5 else 0.0,
         }
         info = {
             "raw_action_mm": action_mm,
             "filtered_action_mm": filtered_mm,
-            "actual_model_irrigation_mm": applied,
-            "applied_mm": applied,  # kept for backward compatibility with existing callers
-            "action_modified": applied != action_mm,
+            # P0-3 (audit-v2): the model-truth applied amount (irr_cum
+            # delta), which is what quota/rewards now account for.
+            "actual_model_irrigation_mm": actual_applied,
+            "applied_mm": applied,  # requested-after-safety-filter, kept for backward compatibility
+            "action_modified": actual_applied != action_mm,
             "safety_rule_triggered": ",".join(triggered_rules) if triggered_rules else "",
             "quota_used_mm": self.quota_used,
             "quota_violation_mm": max(0.0, self.quota_used - self.annual_quota),
@@ -314,11 +339,18 @@ class RotationIrrigationEnv:
 
             if crop == "wheat":
                 self._check_wheat_maize_handoff()
-                # hand the depleted profile to maize and keep going
+                # P0-1 (audit-v2): hand the depleted profile to maize via an
+                # off-season window starting the day after wheat's ACTUAL
+                # harvest - the fallow days before maize planting (up to a
+                # month of rain/ET, previously skipped) are simulated by
+                # _advance_to_planting before the policy takes over.
+                wheat_harvest = pd.Timestamp(self.season_results["wheat"]["harvest_date"])
+                maize_start = (wheat_harvest + pd.Timedelta(days=1)).strftime("%Y/%m/%d")
                 self._start_season(
-                    "maize", f"{self.year}/{MAIZE_PLANTING}", f"{self.year}/{MAIZE_HARVEST}",
-                    _wc_from_profile(th_end),
+                    "maize", maize_start, f"{self.year}/{MAIZE_HARVEST}",
+                    _wc_from_profile(th_end), off_season=True,
                 )
+                self._advance_to_planting()
                 self.days_since_last_irr, self.last_irr_mm = 99, 0.0
                 # reset the shaping potential's baseline at the crop switch -
                 # otherwise the first maize step's shaping term would jump

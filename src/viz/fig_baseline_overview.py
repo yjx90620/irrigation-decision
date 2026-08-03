@@ -2,8 +2,14 @@
 from data/processed/baseline_experiment_results.csv (5400 simulation runs).
 4 panels: yield distribution by strategy, water-yield tradeoff, per-site
 rainfed-vs-full-irrigation gradient, water-loss breakdown by strategy.
+
+audit-v2 (P0-12): these are SINGLE-SEASON PROTOTYPE baseline results
+archived to data/processed/invalidated/legacy_v1/ (each crop started near
+field capacity, no rotation). The script refuses to load them unless
+--allow-legacy is passed.
 """
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -15,12 +21,24 @@ import seaborn as sns
 from style import PALETTE, SITE_LABELS_CN, SITE_ORDER, STRATEGY_LABELS_CN, STRATEGY_ORDER, apply_style
 
 DATA_PATH = Path(__file__).resolve().parents[2] / "data" / "processed" / "baseline_experiment_results.csv"
+LEGACY_DATA_PATH = (
+    Path(__file__).resolve().parents[2] / "data" / "processed" / "invalidated" / "legacy_v1"
+    / "baseline_experiment_results.csv"
+)
 OUT_PATH = Path(__file__).resolve().parents[2] / "figures" / "fig1_baseline_overview.png"
 
 
-def main():
+def main(allow_legacy: bool):
+    if allow_legacy:
+        path = LEGACY_DATA_PATH
+        print("WARNING: loading SINGLE-SEASON PROTOTYPE results (legacy_v1) - not valid for final claims")
+    else:
+        raise SystemExit(
+            "fig1 reads single-season PROTOTYPE results (data/processed/invalidated/legacy_v1/) - "
+            "invalidated by audit-v2 P0-12. Pass --allow-legacy for development record only."
+        )
     apply_style()
-    df = pd.read_csv(DATA_PATH)
+    df = pd.read_csv(path)
     df["strategy_cn"] = df["strategy"].map(STRATEGY_LABELS_CN)
     df["site_cn"] = df["site_id"].map(SITE_LABELS_CN)
     strategy_order_cn = [STRATEGY_LABELS_CN[s] for s in STRATEGY_ORDER]
@@ -86,4 +104,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--allow-legacy", action="store_true",
+                        help="audit-v2 P0-12: load archived single-season prototype results (dev record only)")
+    args = parser.parse_args()
+    main(allow_legacy=args.allow_legacy)

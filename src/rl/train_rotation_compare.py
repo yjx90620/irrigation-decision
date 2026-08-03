@@ -38,6 +38,21 @@ TEST_YEARS = [2018, 2019, 2020, 2021, 2022]
 BALANCED_WEIGHTS = {"yield_proxy": 0.4, "water": 0.3, "cost": 0.2, "risk": 0.1}
 GAMMA = 0.995  # must match PPO's own gamma below, for discounted_return to mean anything
 
+# P1-4 (audit-v2): the policies are preference-CONDITIONED (the weight
+# vector is part of the observation), but evaluation only ever used the
+# balanced weights - that cannot show the policy actually responds to
+# preferences. These sets exercise each objective's extremes plus two
+# pairwise trade-offs; each trained model is evaluated under all of them.
+PREFERENCE_EVAL_SETS = {
+    "balanced": BALANCED_WEIGHTS,
+    "yield_max": {"yield_proxy": 0.7, "water": 0.1, "cost": 0.1, "risk": 0.1},
+    "water_min": {"yield_proxy": 0.1, "water": 0.7, "cost": 0.1, "risk": 0.1},
+    "cost_min": {"yield_proxy": 0.1, "water": 0.1, "cost": 0.7, "risk": 0.1},
+    "risk_min": {"yield_proxy": 0.1, "water": 0.1, "cost": 0.1, "risk": 0.7},
+    "yield_vs_water": {"yield_proxy": 0.5, "water": 0.4, "cost": 0.05, "risk": 0.05},
+    "water_vs_cost": {"yield_proxy": 0.1, "water": 0.45, "cost": 0.45, "risk": 0.0},
+}
+
 # P0-4 (docs/审计修复计划.md): WORKERS_PER_SITE * len(TRAIN_SITES) parallel
 # envs, one fixed site per worker (RotationGymEnv's fixed_site), cycling
 # evenly - not the old uniform-per-episode sampling, which skewed
@@ -176,39 +191,48 @@ def load_policy(model_path, vecnorm_path, mode, strict_pairing=True):
     return policy_fn
 
 
-def evaluate(policy_fn, label, sites=None, years=None):
+def evaluate(policy_fn, label, sites=None, years=None, preference_sets=None):
+    """P1-4 (audit-v2): the policy is preference-CONDITIONED (weights are
+    part of its observation), so a single balanced-weight evaluation
+    cannot show that. `preference_sets` is a {name: weights} dict; every
+    policy is rolled out under each set and the rows tagged with the set
+    name, so the paper can show the objective vector changing as the
+    preference shifts instead of only ever reporting the balanced point."""
+    preference_sets = preference_sets or {"balanced": BALANCED_WEIGHTS}
     rows = []
     for site_id in (sites or list(SITES)):
         for year in (years or TEST_YEARS):
-            env = RotationIrrigationEnv(site_id, "loam", year)
-            state = env.reset()
-            done, n_steps, n_mod = False, 0, 0
-            undiscounted_return, discounted_return = 0.0, 0.0
-            while not done:
-                state, reward, done, info = env.step(policy_fn(state, BALANCED_WEIGHTS))
-                r = combine_reward(reward, BALANCED_WEIGHTS)
-                undiscounted_return += r
-                discounted_return += (GAMMA ** n_steps) * r
-                n_steps += 1
-                n_mod += int(info["action_modified"])
-            # Single-crop sites (Ningxia) have no "wheat" key, so report
-            # per-crop columns only for the crops that site actually grows.
-            row = {
-                "policy": label, "site_id": site_id, "year": year,
-                "total_yield_t_ha": info["total_yield_t_ha"],
-                "total_irrigation_mm": info["total_irrigation_mm"],
-                "action_modified_rate": n_mod / n_steps,
-                # P0-4c (docs/审计修复计划.md): PPO optimizes the discounted
-                # return (gamma=0.995), not the flat sum - both are reported
-                # so neither gets mistaken for "what the model optimizes".
-                "undiscounted_return": undiscounted_return,
-                "discounted_return": discounted_return,
-            }
-            for crop in ("wheat", "maize", "spring_maize"):
-                if crop in info:
-                    row[f"{crop}_yield"] = info[crop]["dry_yield_t_ha"]
-                    row[f"{crop}_irr"] = info[crop]["irrigation_mm"]
-            rows.append(row)
+            for pref_name, weights in preference_sets.items():
+                env = RotationIrrigationEnv(site_id, "loam", year)
+                state = env.reset()
+                done, n_steps, n_mod = False, 0, 0
+                undiscounted_return, discounted_return = 0.0, 0.0
+                while not done:
+                    state, reward, done, info = env.step(policy_fn(state, weights))
+                    r = combine_reward(reward, weights)
+                    undiscounted_return += r
+                    discounted_return += (GAMMA ** n_steps) * r
+                    n_steps += 1
+                    n_mod += int(info["action_modified"])
+                # Single-crop sites (Ningxia) have no "wheat" key, so report
+                # per-crop columns only for the crops that site actually grows.
+                row = {
+                    "policy": label, "site_id": site_id, "year": year,
+                    "preference": pref_name,
+                    "total_yield_t_ha": info["total_yield_t_ha"],
+                    "total_irrigation_mm": info["total_irrigation_mm"],
+                    "action_modified_rate": n_mod / n_steps,
+                    # P0-4c (docs/审计修复计划.md): PPO optimizes the discounted
+                    # return (gamma=0.995), not the flat sum - both are reported
+                    # so neither gets mistaken for "what the model optimizes".
+                    "undiscounted_return": undiscounted_return,
+                    "discounted_return": discounted_return,
+                }
+                for crop in ("wheat", "maize", "spring_maize"):
+                    if crop in info:
+                        row[f"{crop}_yield"] = info[crop]["dry_yield_t_ha"]
+                        row[f"{crop}_irr"] = info[crop]["irrigation_mm"]
+                rows.append(row)
     return pd.DataFrame(rows)
 
 
@@ -218,9 +242,12 @@ def main(n_seeds=1, seeds=None):
     it were representative - each row is tagged with its seed so the
     caller can report mean +/- std rather than a single run's number."""
     seeds = seeds or list(range(n_seeds))
+    # Rule baselines are deterministic and not preference-conditioned, so
+    # they only need the balanced evaluation; PPO models are evaluated
+    # under every preference set (P1-4, audit-v2).
     frames = [
-        evaluate(threshold_policy, "threshold_rule"),
-        evaluate(quota_reserving_policy, "quota_reserving_rule"),
+        evaluate(threshold_policy, "threshold_rule", preference_sets={"balanced": BALANCED_WEIGHTS}),
+        evaluate(quota_reserving_policy, "quota_reserving_rule", preference_sets={"balanced": BALANCED_WEIGHTS}),
     ]
     print("rule baselines done")
 
@@ -232,7 +259,10 @@ def main(n_seeds=1, seeds=None):
             if not model_path.exists():
                 print(f"=== training {mode} seed={seed} ===")
                 model_path, vecnorm_path = train(mode, seed=seed)
-            eval_df = evaluate(load_policy(model_path, vecnorm_path, mode), f"ppo_{mode}")
+            eval_df = evaluate(
+                load_policy(model_path, vecnorm_path, mode), f"ppo_{mode}",
+                preference_sets=PREFERENCE_EVAL_SETS,
+            )
             eval_df["seed"] = seed
             frames.append(eval_df)
             print(f"{mode} seed={seed} evaluated")

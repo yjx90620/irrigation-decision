@@ -3,8 +3,16 @@ from data/processed/leave_one_out_transfer.csv. 2 panels: yield by
 site/condition (zero-shot/fine-tuned/threshold-rule), and environmental
 distance vs transfer gap scatter (testing whether distance predicts
 difficulty).
+
+audit-v2 (P0-12): this figure is built from SINGLE-SEASON PROTOTYPE
+results archived to data/processed/invalidated/legacy_v1/ (invalidated
+by the system upgrade). The rotation-era transfer results live in
+leave_one_out_rotation_transfer.csv and have their own figure
+(fig_transfer_rotation if present); this script refuses to load the
+legacy CSV unless --allow-legacy is passed.
 """
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -15,13 +23,25 @@ import pandas as pd
 from style import PALETTE, SITE_LABELS_CN, SITE_ORDER, apply_style
 
 DATA_PATH = Path(__file__).resolve().parents[2] / "data" / "processed" / "leave_one_out_transfer.csv"
+LEGACY_DATA_PATH = (
+    Path(__file__).resolve().parents[2] / "data" / "processed" / "invalidated" / "legacy_v1"
+    / "leave_one_out_transfer.csv"
+)
 OUT_PATH = Path(__file__).resolve().parents[2] / "figures" / "fig6_transfer_leave_one_out.png"
 CONDITION_LABELS = {"zero_shot": "零样本迁移", "finetuned": "目标域微调", "threshold_rule": "阈值规则（参照）"}
 
 
-def main():
+def main(allow_legacy: bool):
+    if allow_legacy:
+        path = LEGACY_DATA_PATH
+        print("WARNING: loading SINGLE-SEASON PROTOTYPE results (legacy_v1) - not valid for final claims")
+    else:
+        raise SystemExit(
+            "fig6 reads single-season PROTOTYPE results (data/processed/invalidated/legacy_v1/) - "
+            "invalidated by audit-v2 P0-12. Pass --allow-legacy for development record only."
+        )
     apply_style()
-    df = pd.read_csv(DATA_PATH)
+    df = pd.read_csv(path)
     df["site_cn"] = df["target_site"].map(SITE_LABELS_CN)
     site_order_cn = [SITE_LABELS_CN[s] for s in SITE_ORDER]
 
@@ -62,4 +82,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--allow-legacy", action="store_true",
+                        help="audit-v2 P0-12: load archived single-season prototype results (dev record only)")
+    args = parser.parse_args()
+    main(allow_legacy=args.allow_legacy)

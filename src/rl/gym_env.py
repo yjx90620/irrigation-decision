@@ -1,4 +1,9 @@
-"""Gymnasium wrapper around IrrigationEnv for stable-baselines3 training.
+"""DEPRECATED (audit-v2 P0-12): single-season prototype Gym wrapper -
+results invalidated (see docs/AUDIT_FIX_LOG.md); use
+src/rl/residual_gym_env.py (rotation-era) instead.
+
+Original docstring:
+Gymnasium wrapper around IrrigationEnv for stable-baselines3 training.
 
 Domain-randomizes site x soil x year x preference weights every episode
 (研究方案 5.7: "训练过程中随机抽取不同偏好") so a single policy learns to

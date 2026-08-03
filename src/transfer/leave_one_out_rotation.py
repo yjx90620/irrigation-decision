@@ -100,9 +100,26 @@ def run_fold(target_site):
 def main():
     out_path = OUT_DIR / "leave_one_out_rotation_transfer.csv"
     existing = pd.read_csv(out_path) if out_path.exists() else pd.DataFrame()
-    done_targets = set(existing["target_site"]) if not existing.empty else set()
+    # audit-v2 (P0-13): a target is only "done" when its fold rows are
+    # complete - every condition (zero_shot/finetuned/threshold_rule) x
+    # every TEST_YEAR present with finite yield/irrigation. A target whose
+    # fold crashed partway must be re-run, not skipped because its name
+    # appears in the file.
+    if not existing.empty:
+        required = {"target_site", "condition", "year", "total_yield_t_ha", "total_irrigation_mm"}
+        if required.issubset(existing.columns):
+            complete = existing[
+                existing[["total_yield_t_ha", "total_irrigation_mm"]].notna().all(axis=1)
+            ]
+            expected_rows = 3 * len(TEST_YEARS)  # 3 conditions x 5 years per target
+            counts = complete.groupby("target_site").size()
+            done_targets = set(counts[counts >= expected_rows].index)
+        else:
+            done_targets = set()
+    else:
+        done_targets = set()
 
-    frames = [existing] if not existing.empty else []
+    frames = [existing[existing["target_site"].isin(done_targets)]] if not existing.empty else []
     for target_site in SITES:
         if target_site in done_targets:
             print(f"skip {target_site}, already done")
