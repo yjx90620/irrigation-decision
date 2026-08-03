@@ -116,7 +116,8 @@ class SiteTransitionLogger(BaseCallback):
         }).to_csv(self.out_path, index=False)
 
 
-def train(mode, total_timesteps=TOTAL_TIMESTEPS, workers_per_site=WORKERS_PER_SITE, sites=TRAIN_SITES, seed=0):
+def train(mode, total_timesteps=TOTAL_TIMESTEPS, workers_per_site=WORKERS_PER_SITE, sites=TRAIN_SITES,
+          seed=0, gamma=None):
     # P0-5 (docs/审计修复计划.md): direct and residual need paired seeds and
     # identical scenario sequences to be a fair comparison, not each doing
     # its own uncontrolled domain randomization. seed drives both SB3's own
@@ -125,13 +126,22 @@ def train(mode, total_timesteps=TOTAL_TIMESTEPS, workers_per_site=WORKERS_PER_SI
     # train('direct', seed=3) and train('residual', seed=3) see the same
     # sequence of scenarios in the same order.
     n_envs = workers_per_site * len(sites)
-    run_name = f"ppo_rotation_{mode}" if seed == 0 else f"ppo_rotation_{mode}_seed{seed}"
+    eff_gamma = GAMMA if gamma is None else gamma
+    # P0-9 (audit-v2): gamma is an experiment-design axis, not a PPO default.
+    # The regenerated 0.995 policies collapsed toward water-minimizing
+    # behavior (learning curves: irrigation 250->60mm, yield flat ~8.5 t/ha
+    # vs rules' 13-16), because the per-step water penalties accumulate while
+    # the single terminal yield bonus is discounted by gamma^T ~ 0.45 over
+    # ~122 steps - the audit requires comparing gamma=1.0. A non-default
+    # gamma gets a run-name tag so the two arms never clobber each other.
+    gtag = "" if eff_gamma == GAMMA else f"_gamma{int(eff_gamma)}"
+    run_name = f"ppo_rotation_{mode}{gtag}" if seed == 0 else f"ppo_rotation_{mode}{gtag}_seed{seed}"
     env_fns = [functools.partial(_make_env, rank, mode, sites, seed=seed) for rank in range(n_envs)]
     vec_env = SubprocVecEnv(env_fns)
     vec_env = VecNormalize(vec_env, norm_obs=True, norm_reward=False, clip_obs=10.0)
     model = PPO(
         "MlpPolicy", vec_env, verbose=1, n_steps=512, batch_size=256, n_epochs=10,
-        learning_rate=3e-4, gamma=GAMMA, ent_coef=0.01, seed=seed,
+        learning_rate=3e-4, gamma=eff_gamma, ent_coef=0.01, seed=seed,
         device="cpu",  # measured: GPU gives ~1.12x here and SB3 warns against it for MlpPolicy
     )
     checkpoint_dir = OUT_DIR / "ppo_checkpoints"
@@ -198,7 +208,7 @@ def load_policy(model_path, vecnorm_path, mode, strict_pairing=True):
     return policy_fn
 
 
-def evaluate(policy_fn, label, sites=None, years=None, preference_sets=None):
+def evaluate(policy_fn, label, sites=None, years=None, preference_sets=None, gamma=GAMMA):
     """P1-4 (audit-v2): the policy is preference-CONDITIONED (weights are
     part of its observation), so a single balanced-weight evaluation
     cannot show that. `preference_sets` is a {name: weights} dict; every
@@ -218,7 +228,7 @@ def evaluate(policy_fn, label, sites=None, years=None, preference_sets=None):
                     state, reward, done, info = env.step(policy_fn(state, weights))
                     r = combine_reward(reward, weights)
                     undiscounted_return += r
-                    discounted_return += (GAMMA ** n_steps) * r
+                    discounted_return += (gamma ** n_steps) * r
                     n_steps += 1
                     n_mod += int(info["action_modified"])
                 # Single-crop sites (Ningxia) have no "wheat" key, so report
