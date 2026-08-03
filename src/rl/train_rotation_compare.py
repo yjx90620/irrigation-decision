@@ -136,9 +136,18 @@ def train(mode, total_timesteps=TOTAL_TIMESTEPS, workers_per_site=WORKERS_PER_SI
     )
     checkpoint_dir = OUT_DIR / "ppo_checkpoints"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    # audit-v2 (regen): SB3's CheckpointCallback.save_freq counts CALLBACK
+    # CALLS (one per rollout = n_steps x n_envs timesteps), not timesteps -
+    # the old `max(100_000 // n_envs, 1)` = 10000 meant a checkpoint every
+    # 10000 ROLLOUTS = 51.2M timesteps, i.e. never within a 400k run (the
+    # empty checkpoint dir at 40k steps proved it), silently dropping the
+    # learning-curve data reconstruct_learning_curve.py needs. Divide by
+    # the rollout length so ~100k timesteps elapse between checkpoints.
+    rollout_steps = n_steps * n_envs
+    checkpoint_every_rollouts = max(100_000 // rollout_steps, 1)
     callback = CallbackList([
         CheckpointCallback(
-            save_freq=max(100_000 // n_envs, 1), save_path=str(checkpoint_dir),
+            save_freq=checkpoint_every_rollouts, save_path=str(checkpoint_dir),
             name_prefix=run_name, save_vecnormalize=True,
         ),
         SiteTransitionLogger(OUT_DIR / f"{run_name}_site_transitions.csv"),

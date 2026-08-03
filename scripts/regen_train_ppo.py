@@ -15,7 +15,10 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 MODES = ["direct", "residual"]
 SEEDS = [0, 1, 2]
-CONCURRENCY = 3
+# audit-v2 (regen): 3 concurrent trainings measured ~5.7 fps each (30
+# AquaCrop workers thrashing 36 cores) vs ~33 fps solo - 2 concurrent is
+# the wall-clock sweet spot (~10-12 fps each, ~6h per model, 3 waves).
+CONCURRENCY = 2
 
 
 def train_cmd(mode, seed):
