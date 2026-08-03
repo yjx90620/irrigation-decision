@@ -35,6 +35,10 @@ POLICY_COLOR = dict(zip(POLICY_ORDER, PALETTE))
 def main():
     apply_style()
     df = pd.read_csv(DATA_PATH)
+    # P1-4 (audit-v2): the comparison CSV now carries a `preference` axis
+    # (the policies are preference-conditioned and evaluated under 7 sets) -
+    # the headline comparison must not average across preference sets.
+    df = df[df["preference"] == "balanced"]
     site_order_cn = [SITE_LABELS_CN[s] for s in SITE_ORDER]
 
     fig, axes = plt.subplots(1, 4, figsize=(22, 6))
