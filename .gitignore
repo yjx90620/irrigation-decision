@@ -21,6 +21,11 @@ env/
 # numbers) - only transient intermediate files are excluded.
 *.nc
 data/raw/weather_agera5/_tmp/
+# PPO checkpoints: TRANSIENT while training runs (one every ~100k steps,
+# plus vecnormalize pkls) - committing mid-flight saves polluted the repo
+# once (audit-v2 regen). Commit the final ~100k-step checkpoint set with
+# `git add -f` when a training run completes.
+data/processed/ppo_checkpoints/
 
 # Logs & temp
 *.log

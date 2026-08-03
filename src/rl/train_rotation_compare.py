@@ -125,30 +125,27 @@ def train(mode, total_timesteps=TOTAL_TIMESTEPS, workers_per_site=WORKERS_PER_SI
     # train('direct', seed=3) and train('residual', seed=3) see the same
     # sequence of scenarios in the same order.
     n_envs = workers_per_site * len(sites)
-    n_steps = 512  # PPO rollout length (also used for the checkpoint cadence below)
     run_name = f"ppo_rotation_{mode}" if seed == 0 else f"ppo_rotation_{mode}_seed{seed}"
     env_fns = [functools.partial(_make_env, rank, mode, sites, seed=seed) for rank in range(n_envs)]
     vec_env = SubprocVecEnv(env_fns)
     vec_env = VecNormalize(vec_env, norm_obs=True, norm_reward=False, clip_obs=10.0)
     model = PPO(
-        "MlpPolicy", vec_env, verbose=1, n_steps=n_steps, batch_size=256, n_epochs=10,
+        "MlpPolicy", vec_env, verbose=1, n_steps=512, batch_size=256, n_epochs=10,
         learning_rate=3e-4, gamma=GAMMA, ent_coef=0.01, seed=seed,
         device="cpu",  # measured: GPU gives ~1.12x here and SB3 warns against it for MlpPolicy
     )
     checkpoint_dir = OUT_DIR / "ppo_checkpoints"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    # audit-v2 (regen): SB3's CheckpointCallback.save_freq counts CALLBACK
-    # CALLS (one per rollout = n_steps x n_envs timesteps), not timesteps -
-    # the old `max(100_000 // n_envs, 1)` = 10000 meant a checkpoint every
-    # 10000 ROLLOUTS = 51.2M timesteps, i.e. never within a 400k run (the
-    # empty checkpoint dir at 40k steps proved it), silently dropping the
-    # learning-curve data reconstruct_learning_curve.py needs. Divide by
-    # the rollout length so ~100k timesteps elapse between checkpoints.
-    rollout_steps = n_steps * n_envs
-    checkpoint_every_rollouts = max(100_000 // rollout_steps, 1)
+    # SB3's CheckpointCallback.save_freq counts CALLBACK CALLS: _on_step
+    # fires once per env step (n_envs timesteps each), so
+    # max(100_000 // n_envs, 1) = 10000 fires when num_timesteps crosses
+    # 100k - a checkpoint every ~100k timesteps (measured round 1: files at
+    # exactly 100000/200000/300000/400000_steps). Do NOT divide by the
+    # rollout length here; a transient "fix" doing that produced a
+    # checkpoint every 190 steps (thousands of junk files, reverted).
     callback = CallbackList([
         CheckpointCallback(
-            save_freq=checkpoint_every_rollouts, save_path=str(checkpoint_dir),
+            save_freq=max(100_000 // n_envs, 1), save_path=str(checkpoint_dir),
             name_prefix=run_name, save_vecnormalize=True,
         ),
         SiteTransitionLogger(OUT_DIR / f"{run_name}_site_transitions.csv"),
