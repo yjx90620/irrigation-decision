@@ -256,8 +256,10 @@ def main(quarantine_bad=True):
                         dest = QUARANTINE_DIR / out_path.name
                         out_path.replace(dest)
                         print(f"  -> moved to quarantine/ ({dest.name})")
-                    continue
-
+                    # audit-v2 (P0-7): a quarantined/invalid file must be
+                    # RE-DOWNLOADED, not skipped - fall through to the
+                    # download block below (the old code `continue`d here,
+                    # so quarantine silently removed the dataset).
             print(f"downloading {site_id} {period} ({start}..{end}) x {len(MODELS)} models ...")
             try:
                 df = fetch(site_id, meta["lat"], meta["lon"], start, end)
