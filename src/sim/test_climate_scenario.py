@@ -35,7 +35,7 @@ def test_multiplicative_delta_is_mean_of_ratios_not_ratio_of_means():
     original_models = climate_scenario.MODELS
     climate_scenario.MODELS = ["A", "B"]
     try:
-        mean, std, n = _ensemble_delta(hist, fut, "precip", "multiplicative")
+        mean, std, n, clip_fraction = _ensemble_delta(hist, fut, "precip", "multiplicative")
     finally:
         climate_scenario.MODELS = original_models
 
@@ -58,7 +58,7 @@ def test_models_missing_from_either_period_are_excluded_from_both():
     original_models = climate_scenario.MODELS
     climate_scenario.MODELS = ["A", "B"]
     try:
-        mean, std, n = _ensemble_delta(hist, fut, "precip", "multiplicative")
+        mean, std, n, clip_fraction = _ensemble_delta(hist, fut, "precip", "multiplicative")
     finally:
         climate_scenario.MODELS = original_models
 

@@ -35,6 +35,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "utils"))
 
 import pandas as pd
+from enum import Enum
+
+import numpy as np
 import requests
 
 from atomic_io import atomic_write_csv, sha256_file
@@ -100,30 +103,47 @@ def _parse_date_series(df: pd.DataFrame) -> pd.Series:
     return dates
 
 
+class ColumnStatus(str, Enum):
+    """audit-v3 (4.2): per-variable-model column health. Only COMPLETE
+    columns enter the ensemble; anything else is excluded SYMMETRICALLY
+    in both periods (never on one side only)."""
+    COMPLETE = "complete"
+    UPSTREAM_UNAVAILABLE = "upstream_unavailable"
+    PARTIAL_INVALID = "partial_invalid"
+    EMPTY_INVALID = "empty_invalid"
+
+
+def is_complete_column(series: pd.Series, expected_rows: int) -> bool:
+    """audit-v3 (4.2): a usable column must have every expected row, all
+    non-null, and all finite - .notna().any() is not a validity test."""
+    return (
+        len(series) == expected_rows
+        and series.notna().all()
+        and np.isfinite(pd.to_numeric(series, errors="coerce").to_numpy(dtype=float)).all()
+    )
+
+
+def column_status(series: pd.Series, expected_rows: int) -> ColumnStatus:
+    if series is None or len(series) == 0:
+        return ColumnStatus.EMPTY_INVALID
+    if is_complete_column(series, expected_rows):
+        return ColumnStatus.COMPLETE
+    if series.notna().sum() == 0:
+        return ColumnStatus.EMPTY_INVALID
+    return ColumnStatus.UPSTREAM_UNAVAILABLE if series.notna().mean() >= 0.5 else ColumnStatus.PARTIAL_INVALID
+
+
 def validate_cmip6_frame(df: pd.DataFrame, start_date: str, end_date: str,
                          required_variables=None, expected_models=None) -> dict:
-    """Structural validation (audit-v2, P0-7). Raises DataValidationError
-    on date-range gaps, duplicates or unparseable dates (hard failures);
-    returns a per-variable-model coverage dict (0..1) on success.
-
-    A REQUIRED variable-model column that is entirely empty does NOT raise:
-    the re-download probe proved the gap can be upstream (the Open-Meteo
-    HighResMIP API returns no shortwave radiation for CMCC_CM2_VHR4 at
-    all - every fresh download came back with the same empty column), so
-    a hard failure would make the whole CMIP6 dataset unusable forever.
-    Instead the file is written with coverage[col] = 0.0 and the manifest
-    marked `degraded_model_gaps`, and the CONSUMER (climate_scenario.py)
-    excludes that model from that variable's ensemble while REPORTING the
-    ensemble size (n_models per variable) - a loud, recorded degradation,
-    not a silent substitution (the audit forbids substituting another
-    model's values; it does not forbid explicitly dropping a model)."""
+    """Structural validation (audit-v2 P0-7 + audit-v3 4.2). Raises on
+    date issues (hard failures); returns per-variable-model column status.
+    Empty/partial columns do NOT raise (the gaps are upstream), but they
+    are recorded and the consumer must exclude them SYMMETRICALLY."""
     required_variables = required_variables or REQUIRED_VARIABLES
     expected_models = expected_models or MODELS
     dates = _parse_date_series(df)
-
     if dates.duplicated().any():
         raise DataValidationError(f"{dates.duplicated().sum()} duplicate dates")
-
     expected = pd.date_range(start_date, end_date, freq="D")
     date_idx = pd.DatetimeIndex(dates)
     missing = expected.difference(date_idx)
@@ -133,28 +153,32 @@ def validate_cmip6_frame(df: pd.DataFrame, start_date: str, end_date: str,
             f"date range mismatch: {len(missing)} missing, {len(extra)} extra "
             f"(expected {start_date}..{end_date}, {len(expected)} days)"
         )
-
     coverage = {}
     for variable in required_variables:
         for model in expected_models:
             col = f"{variable}_{model}"
             if col not in df.columns:
-                coverage[col] = 0.0
+                coverage[col] = ColumnStatus.EMPTY_INVALID
             else:
-                coverage[col] = float(df[col].notna().mean())
+                coverage[col] = column_status(df[col], len(expected))
     return coverage
 
 
 def common_models(hist_df: pd.DataFrame, fut_df: pd.DataFrame, variable: str) -> list:
-    """audit-v2 (P0-7): historical and future periods must share the same
-    usable model set for each variable - averaging 'whatever each side has'
-    silently compares different ensembles (the old per-period bug)."""
-    def usable(df):
-        return {m for m in MODELS if f"{variable}_{m}" in df.columns and df[f"{variable}_{m}"].notna().any()}
-    common = sorted(usable(hist_df) & usable(fut_df))
+    """audit-v3 (4.2): a model enters the ensemble ONLY when its column is
+    COMPLETE in BOTH periods - partial/empty columns are excluded
+    symmetrically, so the historical/future ensembles never differ."""
+    expected_rows = len(hist_df)
+    def complete_in(df):
+        return {
+            m for m in MODELS
+            if f"{variable}_{m}" in df.columns
+            and is_complete_column(df[f"{variable}_{m}"], expected_rows)
+        }
+    common = sorted(complete_in(hist_df) & complete_in(fut_df))
     if len(common) < 3:
         raise DataValidationError(
-            f"'{variable}': only {len(common)} model(s) usable in BOTH periods - "
+            f"'{variable}': only {len(common)} model(s) COMPLETE in BOTH periods - "
             f"cannot pair historical/future ensembles"
         )
     return common
@@ -228,8 +252,9 @@ def write_with_manifest(df: pd.DataFrame, out_path: Path, site_id: str, period: 
     )
     manifest.finished_at = datetime.now(timezone.utc).isoformat()
     manifest_dict = manifest.to_dict()
-    empty_cols = [col for col, cov in coverage.items() if cov == 0.0]
-    validation_status = "degraded_model_gaps" if empty_cols else "complete"
+    empty_cols = [col for col, cov in coverage.items() if cov == ColumnStatus.EMPTY_INVALID]
+    partial_cols = [col for col, cov in coverage.items() if cov == ColumnStatus.PARTIAL_INVALID]
+    validation_status = "degraded_model_gaps" if (empty_cols or partial_cols) else "complete"
     manifest_dict.update({
         "api_url": CLIMATE_URL,
         "site_id": site_id,
@@ -238,29 +263,73 @@ def write_with_manifest(df: pd.DataFrame, out_path: Path, site_id: str, period: 
         "models": MODELS,
         "variables": DAILY_VARS,
         "date_range": {"start": start, "end": end},
-        "field_coverage": coverage,
+        "field_coverage": {k: v.value for k, v in coverage.items()},
         "file_sha256": sha256_file(out_path),
         "license": "Open-Meteo Climate API (CC-BY 4.0 for data; see open-meteo.com)",
         "validation_status": validation_status,
         "model_gaps": empty_cols,
+        "partial_columns": partial_cols,
     })
     from atomic_io import atomic_write_json
     atomic_write_json(out_path.with_suffix(".csv.manifest.json"), manifest_dict)
 
 
-def main(quarantine_bad=True):
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    QUARANTINE_DIR.mkdir(parents=True, exist_ok=True)
+def _report(coverage: dict, out_path: Path) -> None:
+    """audit-v3 (4.2): print the real complete/excluded/empty/partial
+    breakdown instead of an unconditional 'all required columns non-empty'."""
+    complete = [c for c, v in coverage.items() if v == ColumnStatus.COMPLETE]
+    empty = [c for c, v in coverage.items() if v == ColumnStatus.EMPTY_INVALID]
+    partial = [c for c, v in coverage.items() if v == ColumnStatus.PARTIAL_INVALID]
+    n = len(coverage)
+    print(f"  {out_path.name}: {len(complete)}/{n} columns COMPLETE")
+    if empty:
+        print(f"    empty_columns: {empty}")
+    if partial:
+        print(f"    partial_columns: {partial}")
+    return complete, empty, partial
+
+
+def validate_existing_dataset(path) -> dict:
+    """audit-v3 (4.3): NO network access, NO filesystem mutation - read and
+    validate only, returning a per-file report."""
+    report = {}
     for site_id, meta in SITES.items():
         for period, (start, end) in PERIODS.items():
-            out_path = OUT_DIR / f"{site_id}_{period}_cmip6.csv"
-            # audit-v2 (P0-7): existence is not validity - re-validate
-            # every file on every run.
+            out_path = path / f"{site_id}_{period}_cmip6.csv"
+            if not out_path.exists():
+                report[out_path.name] = {"status": "missing"}
+                continue
+            try:
+                df = pd.read_csv(out_path)
+                coverage = validate_cmip6_frame(df, start, end)
+                _report(coverage, out_path)
+                report[out_path.name] = {
+                    "status": "valid", "rows": len(df),
+                    "complete": sum(1 for v in coverage.values() if v == ColumnStatus.COMPLETE),
+                    "empty": sum(1 for v in coverage.values() if v == ColumnStatus.EMPTY_INVALID),
+                    "partial": sum(1 for v in coverage.values() if v == ColumnStatus.PARTIAL_INVALID),
+                }
+            except DataValidationError as exc:
+                report[out_path.name] = {"status": "invalid", "reason": str(exc)}
+                print(f"INVALID {out_path.name}: {exc}")
+    return report
+
+
+def download_and_validate_dataset(request, output_path, quarantine_bad=True) -> dict:
+    """audit-v3 (4.3): network + writes allowed here only."""
+    output_path = Path(output_path)
+    output_path.mkdir(parents=True, exist_ok=True)
+    QUARANTINE_DIR.mkdir(parents=True, exist_ok=True)
+    report = {}
+    for site_id, meta in SITES.items():
+        for period, (start, end) in PERIODS.items():
+            out_path = output_path / f"{site_id}_{period}_cmip6.csv"
             if out_path.exists():
                 try:
                     df = pd.read_csv(out_path)
                     coverage = validate_cmip6_frame(df, start, end)
-                    print(f"valid   {out_path.name} ({len(df)} rows, all required columns non-empty)")
+                    _report(coverage, out_path)
+                    report[out_path.name] = {"status": "valid_existing"}
                     continue
                 except DataValidationError as exc:
                     print(f"INVALID {out_path.name}: {exc}")
@@ -268,29 +337,19 @@ def main(quarantine_bad=True):
                         dest = QUARANTINE_DIR / out_path.name
                         out_path.replace(dest)
                         print(f"  -> moved to quarantine/ ({dest.name})")
-                    # audit-v2 (P0-7): a quarantined/invalid file must be
-                    # RE-DOWNLOADED, not skipped - fall through to the
-                    # download block below (the old code `continue`d here,
-                    # so quarantine silently removed the dataset).
             print(f"downloading {site_id} {period} ({start}..{end}) x {len(MODELS)} models ...")
             try:
                 df = fetch(site_id, meta["lat"], meta["lon"], start, end)
                 coverage = validate_cmip6_frame(df, start, end)
             except DataValidationError as exc:
                 print(f"  download failed validation: {exc} - NOT written to formal dir")
+                report[out_path.name] = {"status": "download_invalid", "reason": str(exc)}
                 continue
-            empty_cols = [col for col, cov in coverage.items() if cov == 0.0]
-            if empty_cols:
-                # audit-v2 (P0-7): upstream model gaps are recorded, not
-                # hidden - the manifest carries validation_status=
-                # 'degraded_model_gaps' and the consumer must drop those
-                # models per-variable and REPORT the ensemble size.
-                print(f"  WARNING: {len(empty_cols)} required variable-model column(s) entirely empty "
-                      f"(upstream API gaps, e.g. {empty_cols[0]}): "
-                      f"written with validation_status='degraded_model_gaps' - "
-                      f"climate_scenario.py drops these models per-variable and reports n_models")
+            _report(coverage, out_path)
             write_with_manifest(df, out_path, site_id, period, start, end, coverage)
             print(f"  saved {len(df)} rows, {len(df.columns)} cols -> {out_path.name}")
+            report[out_path.name] = {"status": "downloaded"}
+    return report
 
 
 if __name__ == "__main__":
@@ -298,11 +357,11 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--check-only", action="store_true",
-                        help="validate existing files and report, without quarantining or downloading")
+                        help="validate existing files READ-ONLY (no network, no writes)")
     parser.add_argument("--no-quarantine", action="store_true",
                         help="report invalid files but leave them in place")
     args = parser.parse_args()
     if args.check_only:
-        main(quarantine_bad=False)
+        validate_existing_dataset(OUT_DIR)
     else:
-        main(quarantine_bad=not args.no_quarantine)
+        download_and_validate_dataset(None, OUT_DIR, quarantine_bad=not args.no_quarantine)
