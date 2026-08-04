@@ -1,1 +1,1 @@
-检查：wq 启动器（bg_a74bd74d，residual seed1/2 最后一波，完成后自动跑 evaluate_wq.py 全量 6 模型）与算法对比（bg_c62d7773）。wq 全量评估 CSV（ppo_rotation_wq_comparison.csv，1050 行）产出后，做 definitive 对比（direct+residual、站点级、偏好集）——奖励重构最终裁决；据此决定论文二主臂（wq）与迁移是否用 wq 重跑。若 algorithm_comparison_*.csv 产出，更新论文一对比3。向用户汇报。
+检查：wq 迁移（bg_6fddca20，折叠 2 进行中，剩 4 折叠约 4-5 小时）、算法对比（bg_c62d7773，~2.5h）。检查 leave_one_out_rotation_transfer_wq.csv 目标站点数（每完成一折叠即可更新论文三 wq 表格）、algorithm_comparison_*.csv（产出后更新论文一对比3 并生成 fig8）。迁移全部完成后：跑两因子 wq 验证（validate_against_observed_gap 对 summary_wq）并更新论文三。向用户汇报。
