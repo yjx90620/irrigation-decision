@@ -1,88 +1,135 @@
 artifact,category,status,reason,regeneration_command
-data/processed/task_sensitivity.csv,rotation_era,valid_regenerated,regenerated with P0-1/P0-2 physics (audit-v2),n/a
-data/processed/allocation_scan.csv,rotation_era,valid_regenerated,regenerated with P0-1/P0-2 physics (audit-v2),n/a
-data/processed/allocation_scan_beijing_plain.csv,rotation_era,valid_regenerated,regenerated with P0-1/P0-2 physics (audit-v2),n/a
-data/processed/allocation_scan_hebei_central.csv,rotation_era,valid_regenerated,regenerated with P0-1/P0-2 physics (audit-v2),n/a
-data/processed/allocation_scan_henan_north.csv,rotation_era,valid_regenerated,regenerated with P0-1/P0-2 physics (audit-v2),n/a
-data/processed/allocation_scan_shaanxi_guanzhong.csv,rotation_era,valid_regenerated,regenerated with P0-1/P0-2 physics (audit-v2),n/a
-data/processed/rotation_policy_comparison.csv,rotation_era,valid_regenerated,regenerated with P0-1/P0-2/P0-3 fixes + P1-4 preference axis (audit-v2),n/a
-data/processed/ppo_rotation_direct_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_direct_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_direct_gamma1_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_direct_gamma1_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_direct_gamma1_seed1_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_direct_gamma1_seed1_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_direct_gamma1_seed1_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_direct_gamma1_seed2_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_direct_gamma1_seed2_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_direct_gamma1_seed2_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_direct_gamma1_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_direct_seed1_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_direct_seed1_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_direct_seed1_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_direct_seed2_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_direct_seed2_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_direct_seed2_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_direct_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_direct_wq_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_direct_wq_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_direct_wq_seed1_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_direct_wq_seed1_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_direct_wq_seed1_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_direct_wq_seed2_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_direct_wq_seed2_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_direct_wq_seed2_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_direct_wq_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_gamma1_comparison.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_learning_curve.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_residual_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_residual_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_residual_gamma1_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_residual_gamma1_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_residual_gamma1_seed1_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_residual_gamma1_seed1_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_residual_gamma1_seed1_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_residual_gamma1_seed2_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_residual_gamma1_seed2_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_residual_gamma1_seed2_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_residual_gamma1_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_residual_seed1_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_residual_seed1_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_residual_seed1_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_residual_seed2_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_residual_seed2_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_residual_seed2_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_residual_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_residual_wq_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_residual_wq_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_residual_wq_seed1_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_residual_wq_seed1_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_residual_wq_seed1_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_residual_wq_seed2_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_residual_wq_seed2_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_residual_wq_seed2_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_residual_wq_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/ppo_rotation_wq_comparison.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/cross_season_pareto_1b_beijing_plain_loam.csv,rotation_era,regenerate_needed,P0-1 fallow bridge + P0-2 maize cultivar changed rotation physics,python src/sim/run_cross_season_all_sites.py
-data/processed/cross_season_pareto_1b_hebei_central_loam.csv,rotation_era,regenerate_needed,P0-1 fallow bridge + P0-2 maize cultivar changed rotation physics,python src/sim/run_cross_season_all_sites.py
-data/processed/cross_season_pareto_1b_henan_north_loam.csv,rotation_era,regenerate_needed,P0-1 fallow bridge + P0-2 maize cultivar changed rotation physics,python src/sim/run_cross_season_all_sites.py
-data/processed/cross_season_pareto_1b_shaanxi_guanzhong_loam.csv,rotation_era,regenerate_needed,P0-1 fallow bridge + P0-2 maize cultivar changed rotation physics,python src/sim/run_cross_season_all_sites.py
-data/processed/cross_season_pareto_beijing_plain_loam.csv,rotation_era,regenerate_needed,P0-1 fallow bridge + P0-2 maize cultivar changed rotation physics,python src/sim/run_cross_season_all_sites.py
-data/processed/cross_season_pareto_hebei_central_loam.csv,rotation_era,regenerate_needed,P0-1 fallow bridge + P0-2 maize cultivar changed rotation physics,python src/sim/run_cross_season_all_sites.py
-data/processed/cross_season_pareto_henan_north_loam.csv,rotation_era,regenerate_needed,P0-1 fallow bridge + P0-2 maize cultivar changed rotation physics,python src/sim/run_cross_season_all_sites.py
-data/processed/cross_season_pareto_shaanxi_guanzhong_loam.csv,rotation_era,regenerate_needed,P0-1 fallow bridge + P0-2 maize cultivar changed rotation physics,python src/sim/run_cross_season_all_sites.py
-data/processed/marginal_water_value.csv,rotation_era,regenerate_needed,P0-1/P0-2 changed rotation physics; P1-2 adds baseline/perturbed pairing columns,python src/sim/marginal_water_value.py
-data/processed/algorithm_comparison_hebei_central.csv,rotation_era,valid_regenerated,"audit-v2 physics, 3 seeds - NSGA-III ~ NSGA-II (0.938 vs 0.936), MOEA/D behind",n/a
-data/processed/algorithm_comparison_hebei_central_hv_summary.csv,rotation_era,valid_regenerated,"audit-v2 physics, 3 seeds - NSGA-III ~ NSGA-II (0.938 vs 0.936), MOEA/D behind",n/a
-data/processed/leave_one_out_rotation_transfer_wq.csv,rotation_era,valid_regenerated,per_quota primary-arm transfer (r=0.971 two-factor validation),n/a
-data/processed/leave_one_out_rotation_summary_wq.csv,rotation_era,valid_regenerated,derived from the wq transfer,n/a
-data/processed/environmental_fingerprints.csv,rotation_era,valid,"fingerprint code unchanged in audit-v2 (cool/warm seasons, TRAIN_YEARS)",n/a
-data/processed/site_distance_matrix.csv,rotation_era,valid,derived from environmental_fingerprints.csv,n/a
-data/processed/site_pca.csv,rotation_era,valid,derived from fingerprints,n/a
-data/processed/site_clusters.csv,rotation_era,valid,derived from fingerprints,n/a
+data/processed/leave_one_out_rotation_transfer.csv,rotation_era,invalid_superseded,per_action water-normalizer arm; replaced by the per_quota (wq) primary arm (audit-v2 P0-9),n/a - wq arm is the paper-3 primary
+data/processed/leave_one_out_rotation_summary.csv,rotation_era,invalid_superseded,derived from the per_action transfer; replaced by summary_wq,n/a - wq arm is the paper-3 primary
+data/processed/marginal_water_value.csv,rotation_era,invalid_superseded,SMT-threshold MWV (P1-2 design); replaced by fixed-dose marginal_response_v2.csv (audit-v3 5.3),n/a - use marginal_water_value_v2.py
+data/processed/task_sensitivity.csv,rotation_era,regenerate_needed,audit-v3 6.6: per-year sensitivity spread columns added,python src/transfer/task_sensitivity.py
+data/processed/allocation_scan.csv,rotation_era,regenerate_needed,audit-v3 5.1: scans on the shared validation window (SPLIT),python src/sim/scan_allocation.py
+data/processed/allocation_scan_beijing_plain.csv,rotation_era,regenerate_needed,audit-v3 5.1: scans on the shared validation window (SPLIT),python src/sim/scan_allocation.py
+data/processed/allocation_scan_hebei_central.csv,rotation_era,regenerate_needed,audit-v3 5.1: scans on the shared validation window (SPLIT),python src/sim/scan_allocation.py
+data/processed/allocation_scan_henan_north.csv,rotation_era,regenerate_needed,audit-v3 5.1: scans on the shared validation window (SPLIT),python src/sim/scan_allocation.py
+data/processed/allocation_scan_shaanxi_guanzhong.csv,rotation_era,regenerate_needed,audit-v3 5.1: scans on the shared validation window (SPLIT),python src/sim/scan_allocation.py
+data/processed/rotation_policy_comparison.csv,rotation_era,regenerate_needed,"audit-v3 2.x: rotation_env rewrite (strict PBRS, system-level yield, calendar days_to_harvest)",retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_direct_final.zip,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_direct_final_vecnormalize.pkl,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_direct_gamma1_final.zip,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_direct_gamma1_final_vecnormalize.pkl,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_direct_gamma1_seed1_final.zip,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_direct_gamma1_seed1_final_vecnormalize.pkl,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_direct_gamma1_seed1_site_transitions.csv,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_direct_gamma1_seed2_final.zip,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_direct_gamma1_seed2_final_vecnormalize.pkl,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_direct_gamma1_seed2_site_transitions.csv,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_direct_gamma1_site_transitions.csv,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_direct_seed1_final.zip,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_direct_seed1_final_vecnormalize.pkl,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_direct_seed1_site_transitions.csv,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_direct_seed2_final.zip,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_direct_seed2_final_vecnormalize.pkl,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_direct_seed2_site_transitions.csv,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_direct_site_transitions.csv,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_direct_wq_final.zip,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_direct_wq_final_vecnormalize.pkl,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_direct_wq_seed1_final.zip,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_direct_wq_seed1_final_vecnormalize.pkl,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_direct_wq_seed1_site_transitions.csv,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_direct_wq_seed2_final.zip,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_direct_wq_seed2_final_vecnormalize.pkl,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_direct_wq_seed2_site_transitions.csv,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_direct_wq_site_transitions.csv,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_gamma1_comparison.csv,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_learning_curve.csv,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_residual_final.zip,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_residual_final_vecnormalize.pkl,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_residual_gamma1_final.zip,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_residual_gamma1_final_vecnormalize.pkl,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_residual_gamma1_seed1_final.zip,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_residual_gamma1_seed1_final_vecnormalize.pkl,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_residual_gamma1_seed1_site_transitions.csv,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_residual_gamma1_seed2_final.zip,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_residual_gamma1_seed2_final_vecnormalize.pkl,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_residual_gamma1_seed2_site_transitions.csv,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_residual_gamma1_site_transitions.csv,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_residual_seed1_final.zip,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_residual_seed1_final_vecnormalize.pkl,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_residual_seed1_site_transitions.csv,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_residual_seed2_final.zip,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_residual_seed2_final_vecnormalize.pkl,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_residual_seed2_site_transitions.csv,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_residual_site_transitions.csv,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_residual_wq_final.zip,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_residual_wq_final_vecnormalize.pkl,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_residual_wq_seed1_final.zip,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_residual_wq_seed1_final_vecnormalize.pkl,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_residual_wq_seed1_site_transitions.csv,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_residual_wq_seed2_final.zip,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_residual_wq_seed2_final_vecnormalize.pkl,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_residual_wq_seed2_site_transitions.csv,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_residual_wq_site_transitions.csv,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/ppo_rotation_wq_comparison.csv,rotation_era,regenerate_needed,audit-v3 2.x: env rewrite invalidates every trained policy,retrain + evaluate (re-run phase)
+data/processed/transfer_rot_source_excl_beijing_plain_final.zip,rotation_era,regenerate_needed,audit-v3 2.x: source policies retrained on the new env,retrain + evaluate (re-run phase)
+data/processed/transfer_rot_source_excl_beijing_plain_final_vecnormalize.pkl,rotation_era,regenerate_needed,audit-v3 2.x: source policies retrained on the new env,retrain + evaluate (re-run phase)
+data/processed/transfer_rot_source_excl_hebei_central_final.zip,rotation_era,regenerate_needed,audit-v3 2.x: source policies retrained on the new env,retrain + evaluate (re-run phase)
+data/processed/transfer_rot_source_excl_hebei_central_final_vecnormalize.pkl,rotation_era,regenerate_needed,audit-v3 2.x: source policies retrained on the new env,retrain + evaluate (re-run phase)
+data/processed/transfer_rot_source_excl_henan_north_final.zip,rotation_era,regenerate_needed,audit-v3 2.x: source policies retrained on the new env,retrain + evaluate (re-run phase)
+data/processed/transfer_rot_source_excl_henan_north_final_vecnormalize.pkl,rotation_era,regenerate_needed,audit-v3 2.x: source policies retrained on the new env,retrain + evaluate (re-run phase)
+data/processed/transfer_rot_source_excl_ningxia_irrigation_final.zip,rotation_era,regenerate_needed,audit-v3 2.x: source policies retrained on the new env,retrain + evaluate (re-run phase)
+data/processed/transfer_rot_source_excl_ningxia_irrigation_final_vecnormalize.pkl,rotation_era,regenerate_needed,audit-v3 2.x: source policies retrained on the new env,retrain + evaluate (re-run phase)
+data/processed/transfer_rot_source_excl_shaanxi_guanzhong_final.zip,rotation_era,regenerate_needed,audit-v3 2.x: source policies retrained on the new env,retrain + evaluate (re-run phase)
+data/processed/transfer_rot_source_excl_shaanxi_guanzhong_final_vecnormalize.pkl,rotation_era,regenerate_needed,audit-v3 2.x: source policies retrained on the new env,retrain + evaluate (re-run phase)
+data/processed/transfer_rot_finetuned_beijing_plain_final.zip,rotation_era,regenerate_needed,audit-v3 2.x: finetuned policies retrained on the new env,retrain + evaluate (re-run phase)
+data/processed/transfer_rot_finetuned_beijing_plain_final_vecnormalize.pkl,rotation_era,regenerate_needed,audit-v3 2.x: finetuned policies retrained on the new env,retrain + evaluate (re-run phase)
+data/processed/transfer_rot_finetuned_hebei_central_final.zip,rotation_era,regenerate_needed,audit-v3 2.x: finetuned policies retrained on the new env,retrain + evaluate (re-run phase)
+data/processed/transfer_rot_finetuned_hebei_central_final_vecnormalize.pkl,rotation_era,regenerate_needed,audit-v3 2.x: finetuned policies retrained on the new env,retrain + evaluate (re-run phase)
+data/processed/transfer_rot_finetuned_henan_north_final.zip,rotation_era,regenerate_needed,audit-v3 2.x: finetuned policies retrained on the new env,retrain + evaluate (re-run phase)
+data/processed/transfer_rot_finetuned_henan_north_final_vecnormalize.pkl,rotation_era,regenerate_needed,audit-v3 2.x: finetuned policies retrained on the new env,retrain + evaluate (re-run phase)
+data/processed/transfer_rot_finetuned_ningxia_irrigation_final.zip,rotation_era,regenerate_needed,audit-v3 2.x: finetuned policies retrained on the new env,retrain + evaluate (re-run phase)
+data/processed/transfer_rot_finetuned_ningxia_irrigation_final_vecnormalize.pkl,rotation_era,regenerate_needed,audit-v3 2.x: finetuned policies retrained on the new env,retrain + evaluate (re-run phase)
+data/processed/transfer_rot_finetuned_shaanxi_guanzhong_final.zip,rotation_era,regenerate_needed,audit-v3 2.x: finetuned policies retrained on the new env,retrain + evaluate (re-run phase)
+data/processed/transfer_rot_finetuned_shaanxi_guanzhong_final_vecnormalize.pkl,rotation_era,regenerate_needed,audit-v3 2.x: finetuned policies retrained on the new env,retrain + evaluate (re-run phase)
+data/processed/cross_season_pareto_1b_beijing_plain_loam.csv,rotation_era,regenerate_needed,audit-v3 5.1: optimization on the shared validation window (SPLIT),python src/sim/run_cross_season_all_sites.py
+data/processed/cross_season_pareto_1b_hebei_central_loam.csv,rotation_era,regenerate_needed,audit-v3 5.1: optimization on the shared validation window (SPLIT),python src/sim/run_cross_season_all_sites.py
+data/processed/cross_season_pareto_1b_henan_north_loam.csv,rotation_era,regenerate_needed,audit-v3 5.1: optimization on the shared validation window (SPLIT),python src/sim/run_cross_season_all_sites.py
+data/processed/cross_season_pareto_1b_shaanxi_guanzhong_loam.csv,rotation_era,regenerate_needed,audit-v3 5.1: optimization on the shared validation window (SPLIT),python src/sim/run_cross_season_all_sites.py
+data/processed/cross_season_pareto_beijing_plain_loam.csv,rotation_era,regenerate_needed,audit-v3 5.1: optimization on the shared validation window (SPLIT),python src/sim/run_cross_season_all_sites.py
+data/processed/cross_season_pareto_hebei_central_loam.csv,rotation_era,regenerate_needed,audit-v3 5.1: optimization on the shared validation window (SPLIT),python src/sim/run_cross_season_all_sites.py
+data/processed/cross_season_pareto_henan_north_loam.csv,rotation_era,regenerate_needed,audit-v3 5.1: optimization on the shared validation window (SPLIT),python src/sim/run_cross_season_all_sites.py
+data/processed/cross_season_pareto_shaanxi_guanzhong_loam.csv,rotation_era,regenerate_needed,audit-v3 5.1: optimization on the shared validation window (SPLIT),python src/sim/run_cross_season_all_sites.py
+data/processed/algorithm_comparison_hebei_central.csv,rotation_era,regenerate_needed,audit-v3 5.1: CrossSeasonProblem now evaluates on the validation window,python src/sim/optimize_algorithm_comparison.py
+data/processed/algorithm_comparison_hebei_central_hv_summary.csv,rotation_era,regenerate_needed,audit-v3 5.1: CrossSeasonProblem now evaluates on the validation window,python src/sim/optimize_algorithm_comparison.py
+data/processed/leave_one_out_rotation_transfer_wq.csv,rotation_era,regenerate_needed,audit-v3 2.x env + 6.1: scratch/full_target_expert arms added,python -m src.transfer.leave_one_out_rotation
+data/processed/leave_one_out_rotation_summary_wq.csv,rotation_era,regenerate_needed,derived from the wq transfer,python -m src.transfer.leave_one_out_rotation
+data/processed/environmental_fingerprints.csv,rotation_era,regenerate_needed,audit-v3 6.5: crop-stage climate features added,python src/transfer/fingerprint.py
+data/processed/site_distance_matrix.csv,rotation_era,regenerate_needed,derived from the crop-stage fingerprints,python src/transfer/similarity_analysis.py
+data/processed/site_pca.csv,rotation_era,regenerate_needed,derived from the crop-stage fingerprints,python src/transfer/similarity_analysis.py
+data/processed/site_clusters.csv,rotation_era,regenerate_needed,derived from the crop-stage fingerprints,python src/transfer/similarity_analysis.py
+data/processed/two_factor_risk.csv,rotation_era,regenerate_needed,depends on the regenerated fingerprints + transfer,python src/transfer/two_factor_predictor.py
+data/processed/two_factor_validation_report.csv,rotation_era,regenerate_needed,"audit-v3 6.2/6.3: bootstrap CI report, derived from transfer + risk",python scripts/validate_two_factor.py
+data/processed/two_factor_leave_one_out.csv,rotation_era,regenerate_needed,audit-v3 6.3: leave-one-out degradation table,python scripts/validate_two_factor.py
 data/processed/agera5_vs_openmeteo_validation.csv,other,valid,cross-product consistency check,n/a
 data/processed/ppo_smoke_test.zip,other,valid,"CI smoke test artifact, not a result",n/a
-data/raw/cmip6,raw_data,valid_regenerated,"8/10 re-downloaded with degraded manifests (CMCC_CM2_VHR4 radiation is an upstream API gap, recorded per file); ningxia 2 files pending daily-quota reset (2026-08-04)",python src/data/download_cmip6.py
-figures/fig7_allocation_scan.png,figure,regenerate_needed,built from pre-fix rotation results,rerun after results regenerated
-figures/fig8_algorithm_comparison.png,figure,regenerate_needed,built from pre-fix rotation results,rerun after results regenerated
-figures/fig10_rotation_policy_comparison.png,figure,regenerate_needed,built from pre-fix rotation results,rerun after results regenerated
+data/raw/cmip6/beijing_plain_future_cmip6.csv,raw_data,valid_regenerated,10/10 files re-downloaded (2026-08-04); degraded manifests recorded per file (CMCC_CM2_VHR4 radiation is an upstream API gap),python src/data/download_cmip6.py
+data/raw/cmip6/beijing_plain_historical_cmip6.csv,raw_data,valid_regenerated,10/10 files re-downloaded (2026-08-04); degraded manifests recorded per file (CMCC_CM2_VHR4 radiation is an upstream API gap),python src/data/download_cmip6.py
+data/raw/cmip6/hebei_central_future_cmip6.csv,raw_data,valid_regenerated,10/10 files re-downloaded (2026-08-04); degraded manifests recorded per file (CMCC_CM2_VHR4 radiation is an upstream API gap),python src/data/download_cmip6.py
+data/raw/cmip6/hebei_central_historical_cmip6.csv,raw_data,valid_regenerated,10/10 files re-downloaded (2026-08-04); degraded manifests recorded per file (CMCC_CM2_VHR4 radiation is an upstream API gap),python src/data/download_cmip6.py
+data/raw/cmip6/henan_north_future_cmip6.csv,raw_data,valid_regenerated,10/10 files re-downloaded (2026-08-04); degraded manifests recorded per file (CMCC_CM2_VHR4 radiation is an upstream API gap),python src/data/download_cmip6.py
+data/raw/cmip6/henan_north_historical_cmip6.csv,raw_data,valid_regenerated,10/10 files re-downloaded (2026-08-04); degraded manifests recorded per file (CMCC_CM2_VHR4 radiation is an upstream API gap),python src/data/download_cmip6.py
+data/raw/cmip6/ningxia_irrigation_future_cmip6.csv,raw_data,valid_regenerated,10/10 files re-downloaded (2026-08-04); degraded manifests recorded per file (CMCC_CM2_VHR4 radiation is an upstream API gap),python src/data/download_cmip6.py
+data/raw/cmip6/ningxia_irrigation_historical_cmip6.csv,raw_data,valid_regenerated,10/10 files re-downloaded (2026-08-04); degraded manifests recorded per file (CMCC_CM2_VHR4 radiation is an upstream API gap),python src/data/download_cmip6.py
+data/raw/cmip6/shaanxi_guanzhong_future_cmip6.csv,raw_data,valid_regenerated,10/10 files re-downloaded (2026-08-04); degraded manifests recorded per file (CMCC_CM2_VHR4 radiation is an upstream API gap),python src/data/download_cmip6.py
+data/raw/cmip6/shaanxi_guanzhong_historical_cmip6.csv,raw_data,valid_regenerated,10/10 files re-downloaded (2026-08-04); degraded manifests recorded per file (CMCC_CM2_VHR4 radiation is an upstream API gap),python src/data/download_cmip6.py
+data/raw/cmip6/beijing_plain_future_cmip6.csv.manifest.json,raw_data,valid_regenerated,10/10 files re-downloaded (2026-08-04); degraded manifests recorded per file (CMCC_CM2_VHR4 radiation is an upstream API gap),python src/data/download_cmip6.py
+data/raw/cmip6/beijing_plain_historical_cmip6.csv.manifest.json,raw_data,valid_regenerated,10/10 files re-downloaded (2026-08-04); degraded manifests recorded per file (CMCC_CM2_VHR4 radiation is an upstream API gap),python src/data/download_cmip6.py
+data/raw/cmip6/hebei_central_future_cmip6.csv.manifest.json,raw_data,valid_regenerated,10/10 files re-downloaded (2026-08-04); degraded manifests recorded per file (CMCC_CM2_VHR4 radiation is an upstream API gap),python src/data/download_cmip6.py
+data/raw/cmip6/hebei_central_historical_cmip6.csv.manifest.json,raw_data,valid_regenerated,10/10 files re-downloaded (2026-08-04); degraded manifests recorded per file (CMCC_CM2_VHR4 radiation is an upstream API gap),python src/data/download_cmip6.py
+data/raw/cmip6/henan_north_future_cmip6.csv.manifest.json,raw_data,valid_regenerated,10/10 files re-downloaded (2026-08-04); degraded manifests recorded per file (CMCC_CM2_VHR4 radiation is an upstream API gap),python src/data/download_cmip6.py
+data/raw/cmip6/henan_north_historical_cmip6.csv.manifest.json,raw_data,valid_regenerated,10/10 files re-downloaded (2026-08-04); degraded manifests recorded per file (CMCC_CM2_VHR4 radiation is an upstream API gap),python src/data/download_cmip6.py
+data/raw/cmip6/ningxia_irrigation_future_cmip6.csv.manifest.json,raw_data,valid_regenerated,10/10 files re-downloaded (2026-08-04); degraded manifests recorded per file (CMCC_CM2_VHR4 radiation is an upstream API gap),python src/data/download_cmip6.py
+data/raw/cmip6/ningxia_irrigation_historical_cmip6.csv.manifest.json,raw_data,valid_regenerated,10/10 files re-downloaded (2026-08-04); degraded manifests recorded per file (CMCC_CM2_VHR4 radiation is an upstream API gap),python src/data/download_cmip6.py
+data/raw/cmip6/shaanxi_guanzhong_future_cmip6.csv.manifest.json,raw_data,valid_regenerated,10/10 files re-downloaded (2026-08-04); degraded manifests recorded per file (CMCC_CM2_VHR4 radiation is an upstream API gap),python src/data/download_cmip6.py
+data/raw/cmip6/shaanxi_guanzhong_historical_cmip6.csv.manifest.json,raw_data,valid_regenerated,10/10 files re-downloaded (2026-08-04); degraded manifests recorded per file (CMCC_CM2_VHR4 radiation is an upstream API gap),python src/data/download_cmip6.py
+figures/fig3_environmental_fingerprint.png,figure,regenerate_needed,audit-v3: inputs regenerated in the re-run,python src/viz/fig_environmental_fingerprint.py
+figures/fig7_allocation_scan.png,figure,regenerate_needed,audit-v3: inputs regenerated in the re-run,python src/viz/fig_allocation_scan.py
+figures/fig8_algorithm_comparison.png,figure,regenerate_needed,audit-v3: inputs regenerated in the re-run,python src/viz/fig_algorithm_comparison.py
+figures/fig10_rotation_policy_comparison.png,figure,regenerate_needed,audit-v3: inputs regenerated in the re-run,python src/viz/fig_rotation_policy_comparison.py
+figures/fig_transfer_rotation.png,figure,regenerate_needed,audit-v3: inputs regenerated in the re-run,python src/viz/fig_transfer_rotation.py
+figures/fig_rl_training_curves_rotation.png,figure,regenerate_needed,audit-v3: inputs regenerated in the re-run,python src/viz/fig_rotation_training_curves.py
