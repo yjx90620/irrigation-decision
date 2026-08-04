@@ -20,7 +20,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "rl"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "data"))
+# `from sim.temporal_split import SPLIT` below is package-style: it needs
+# the src/ dir itself on the path, not just the subpackage dirs.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import numpy as np
 import pandas as pd
 
 from config import SITES
@@ -34,9 +38,25 @@ from train_rotation_utils import train_rotation_policy
 TEST_YEARS = list(SPLIT.final_test_years)
 SOURCE_STEPS = 200_000
 FINETUNE_STEPS = 50_000
+# audit-v3 (6.1): full-target expert UPPER BOUND - same budget as the
+# source-side policy, so it is never mistaken for a fair comparison
+# against the 50k-budget arms.
+EXPERT_STEPS = SOURCE_STEPS
 
 OUT_DIR = Path(__file__).resolve().parents[2] / "data" / "processed"
 DIST_PATH = OUT_DIR / "site_distance_matrix.csv"
+
+
+def _target_budget_for(condition: str) -> int:
+    """audit-v3 (6.1): target-side TRAINING interaction budget per condition.
+    zero_shot and threshold_rule train nothing on the target; finetuned and
+    scratch share FINETUNE_STEPS (fair comparison); full_target_expert is an
+    upper-bound arm at the source-scale budget, never claimed fair."""
+    if condition == "full_target_expert":
+        return EXPERT_STEPS
+    if condition in ("zero_shot", "threshold_rule"):
+        return 0
+    return FINETUNE_STEPS
 
 
 def evaluate(policy_fn, label, site_id, years=TEST_YEARS, config: RLExperimentConfig = PRIMARY_CONFIG):
@@ -88,13 +108,33 @@ def run_fold(target_site, config=PRIMARY_CONFIG, seeds=(0,)):
     finetuned_fn = load_policy(ft_model, ft_vecnorm, "residual")
     finetuned = evaluate(finetuned_fn, "finetuned", target_site, config=config)
 
+    # audit-v3 (6.1): target-only arms. scratch uses the SAME target
+    # interaction budget as finetune (fair comparison); the full-target
+    # expert is an UPPER BOUND with a larger budget - never claimed fair
+    # against the 50k arms.
+    scratch_model, scratch_vecnorm = train_rotation_policy(
+        [target_site], "residual", FINETUNE_STEPS, f"transfer_rot_scratch_{target_site}",
+        checkpoint_every=None, config=config,
+    )
+    scratch_fn = load_policy(scratch_model, scratch_vecnorm, "residual")
+    scratch = evaluate(scratch_fn, "scratch", target_site, config=config)
+
+    expert_model, expert_vecnorm = train_rotation_policy(
+        [target_site], "residual", EXPERT_STEPS, f"transfer_rot_expert_{target_site}",
+        checkpoint_every=None, config=config,
+    )
+    expert_fn = load_policy(expert_model, expert_vecnorm, "residual")
+    expert = evaluate(expert_fn, "full_target_expert", target_site, config=config)
+
     rule = evaluate(threshold_policy, "threshold_rule", target_site, config=config)
 
     dist = pd.read_csv(DIST_PATH, index_col="site_id")
     nearest_distance = dist.loc[target_site, source_sites].min()
 
-    combined = pd.concat([zero_shot, finetuned, rule], ignore_index=True)
+    combined = pd.concat([zero_shot, finetuned, scratch, expert, rule], ignore_index=True)
     combined["nearest_source_distance"] = nearest_distance
+    combined["training_budget_source"] = SOURCE_STEPS
+    combined["training_budget_target"] = combined["condition"].map(_target_budget_for)
     return combined
 
 
@@ -109,7 +149,7 @@ def main(config: RLExperimentConfig = PRIMARY_CONFIG, seeds=(0,)):
             complete = existing[
                 existing[["total_yield_t_ha", "total_irrigation_mm"]].notna().all(axis=1)
             ]
-            expected_rows = 3 * len(TEST_YEARS) * len(seeds)
+            expected_rows = 5 * len(TEST_YEARS) * len(seeds)
             counts = complete.groupby("target_site").size()
             done_targets = set(counts[counts >= expected_rows].index)
         else:
