@@ -26,6 +26,7 @@ from stable_baselines3.common.callbacks import BaseCallback, CallbackList, Check
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize
 
 from config import SITES
+from experiment_config import PRIMARY_CONFIG, RLExperimentConfig
 from residual_gym_env import (
     PREFERENCE_KEYS, RESIDUAL_DELTAS, STATE_KEYS, TRAIN_YEARS, RotationGymEnv,
 )
@@ -35,30 +36,21 @@ from rotation_env import (
 from soils import STANDARD_SOILS
 
 TEST_YEARS = [2018, 2019, 2020, 2021, 2022]
-BALANCED_WEIGHTS = {"yield_proxy": 0.4, "water": 0.3, "cost": 0.2, "risk": 0.1}
-GAMMA = 0.995  # must match PPO's own gamma below, for discounted_return to mean anything
+# audit-v3 (3.8): "risk" -> "acute_stress" (a 3-day mean tr_ratio<0.5
+# binary indicator, NOT interannual downside risk).
+BALANCED_WEIGHTS = {"yield_proxy": 0.4, "water": 0.3, "cost": 0.2, "acute_stress": 0.1}
 
-# P1-4 (audit-v2): the policies are preference-CONDITIONED (the weight
-# vector is part of the observation), but evaluation only ever used the
-# balanced weights - that cannot show the policy actually responds to
-# preferences. These sets exercise each objective's extremes plus two
-# pairwise trade-offs; each trained model is evaluated under all of them.
+# P1-4 (audit-v2): preference-conditioning evaluation sets.
 PREFERENCE_EVAL_SETS = {
     "balanced": BALANCED_WEIGHTS,
-    "yield_max": {"yield_proxy": 0.7, "water": 0.1, "cost": 0.1, "risk": 0.1},
-    "water_min": {"yield_proxy": 0.1, "water": 0.7, "cost": 0.1, "risk": 0.1},
-    "cost_min": {"yield_proxy": 0.1, "water": 0.1, "cost": 0.7, "risk": 0.1},
-    "risk_min": {"yield_proxy": 0.1, "water": 0.1, "cost": 0.1, "risk": 0.7},
-    "yield_vs_water": {"yield_proxy": 0.5, "water": 0.4, "cost": 0.05, "risk": 0.05},
-    "water_vs_cost": {"yield_proxy": 0.1, "water": 0.45, "cost": 0.45, "risk": 0.0},
+    "yield_max": {"yield_proxy": 0.7, "water": 0.1, "cost": 0.1, "acute_stress": 0.1},
+    "water_min": {"yield_proxy": 0.1, "water": 0.7, "cost": 0.1, "acute_stress": 0.1},
+    "cost_min": {"yield_proxy": 0.1, "water": 0.1, "cost": 0.7, "acute_stress": 0.1},
+    "stress_min": {"yield_proxy": 0.1, "water": 0.1, "cost": 0.1, "acute_stress": 0.7},
+    "yield_vs_water": {"yield_proxy": 0.5, "water": 0.4, "cost": 0.05, "acute_stress": 0.05},
+    "water_vs_cost": {"yield_proxy": 0.1, "water": 0.45, "cost": 0.45, "acute_stress": 0.0},
 }
 
-# P0-4 (docs/审计修复计划.md): WORKERS_PER_SITE * len(TRAIN_SITES) parallel
-# envs, one fixed site per worker (RotationGymEnv's fixed_site), cycling
-# evenly - not the old uniform-per-episode sampling, which skewed
-# transition counts toward double-crop sites since their episodes run
-# ~2.3x longer (~120 decision steps) than Ningxia's single-crop ones
-# (~53). N_ENVS=8 with 5 sites couldn't divide evenly; this can.
 WORKERS_PER_SITE = 2
 TOTAL_TIMESTEPS = 400_000
 
@@ -67,13 +59,26 @@ OUT_DIR = Path(__file__).resolve().parents[2] / "data" / "processed"
 TRAIN_SITES = list(SITES)
 
 
-def _make_env(rank, mode, sites, seed=0, water_norm="per_action"):
+def _arm_tag(config: RLExperimentConfig) -> str:
+    """audit-v3 (2.1): run-name suffix derived from the config so each arm
+    (gamma/water-normalizer/shaping ablation) never clobbers another."""
+    tag = ""
+    if config.gamma != PRIMARY_CONFIG.gamma:
+        tag += f"_gamma{int(config.gamma)}"
+    if config.water_normalizer != PRIMARY_CONFIG.water_normalizer:
+        tag += "_wq" if config.water_normalizer == "annual_quota" else "_peraction"
+    if config.shaping_mode != PRIMARY_CONFIG.shaping_mode:
+        tag += "_noshaping"
+    return tag
+
+
+def _make_env(rank, mode, sites, seed=0, config: RLExperimentConfig = PRIMARY_CONFIG):
     # same (seed, rank) -> same per-worker RNG stream regardless of mode,
     # so direct/residual trained with the same seed see identical
-    # site/year/soil/preference sequences (P0-5, docs/审计修复计划.md)
+    # site/year/soil/preference sequences (P0-5)
     return RotationGymEnv(
         mode=mode, sites=list(sites), soils=["loam"], years=TRAIN_YEARS,
-        fixed_site=sites[rank % len(sites)], seed=1000 * seed + rank, water_norm=water_norm,
+        fixed_site=sites[rank % len(sites)], seed=1000 * seed + rank, config=config,
     )
 
 
@@ -116,54 +121,48 @@ class SiteTransitionLogger(BaseCallback):
         }).to_csv(self.out_path, index=False)
 
 
-def train(mode, total_timesteps=TOTAL_TIMESTEPS, workers_per_site=WORKERS_PER_SITE, sites=TRAIN_SITES,
-          seed=0, gamma=None, device="cpu", water_norm="per_action"):
-    # P0-5 (docs/审计修复计划.md): direct and residual need paired seeds and
-    # identical scenario sequences to be a fair comparison, not each doing
-    # its own uncontrolled domain randomization. seed drives both SB3's own
-    # RNG (model init, action sampling) and, via RotationGymEnv.reset()'s
-    # P0-6b fix, every worker's site-year-soil-preference draw - so
-    # train('direct', seed=3) and train('residual', seed=3) see the same
-    # sequence of scenarios in the same order.
+def seed_everything(seed: int, deterministic: bool = True) -> None:
+    """audit-v3 (3.11): explicit seeding of every RNG the training touches."""
+    import os
+    import random
+
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    try:
+        import torch
+
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+        if deterministic:
+            torch.use_deterministic_algorithms(True, warn_only=True)
+    except ImportError:
+        pass
+
+
+def train(mode, config: RLExperimentConfig = PRIMARY_CONFIG, total_timesteps=TOTAL_TIMESTEPS,
+          workers_per_site=WORKERS_PER_SITE, sites=TRAIN_SITES, seed=None):
+    config.validate()
+    seed = config.seed if seed is None else seed
+    # P0-5 + audit-v3 (3.11): seed drives SB3's RNG AND every worker's
+    # site-year-soil-preference draw, so direct/residual with the same
+    # seed see identical scenario sequences.
+    seed_everything(seed, deterministic=config.deterministic_torch)
     n_envs = workers_per_site * len(sites)
-    eff_gamma = GAMMA if gamma is None else gamma
-    # P0-9 (audit-v2): gamma is an experiment-design axis, not a PPO default.
-    # The regenerated 0.995 policies collapsed toward water-minimizing
-    # behavior (learning curves: irrigation 250->60mm, yield flat ~8.5 t/ha
-    # vs rules' 13-16), because the per-step water penalties accumulate while
-    # the single terminal yield bonus is discounted by gamma^T ~ 0.45 over
-    # ~122 steps - the audit requires comparing gamma=1.0. A non-default
-    # gamma gets a run-name tag so the two arms never clobber each other.
-    gtag = "" if eff_gamma == GAMMA else f"_gamma{int(eff_gamma)}"
-    # audit-v2 P0-9: the reward-normalization arm (water / annual_quota)
-    # gets its own run-name tag so it never clobbers the per_action arm.
-    wtag = "" if water_norm == "per_action" else "_wq"
-    run_name = f"ppo_rotation_{mode}{gtag}{wtag}" if seed == 0 else f"ppo_rotation_{mode}{gtag}{wtag}_seed{seed}"
-    env_fns = [functools.partial(_make_env, rank, mode, sites, seed=seed, water_norm=water_norm) for rank in range(n_envs)]
+    tag = _arm_tag(config)
+    run_name = f"ppo_rotation_{mode}{tag}" if seed == 0 else f"ppo_rotation_{mode}{tag}_seed{seed}"
+    env_fns = [functools.partial(_make_env, rank, mode, sites, seed=seed, config=config)
+               for rank in range(n_envs)]
     vec_env = SubprocVecEnv(env_fns)
     vec_env = VecNormalize(vec_env, norm_obs=True, norm_reward=False, clip_obs=10.0)
     model = PPO(
         "MlpPolicy", vec_env, verbose=1, n_steps=512, batch_size=256, n_epochs=10,
-        learning_rate=3e-4, gamma=eff_gamma, ent_coef=0.01, seed=seed,
-        # device: the workload is env-bound (AquaCrop numba steps dominate;
-        # the MLP is tiny). Solo, GPU measured only ~1.12x, but under CPU
-        # contention (multiple trainings + NSGA-II sharing the box) GPU
-        # offload of the NN update is worth ~6x (measured 25 -> 153 fps
-        # at 35+ concurrent processes). CPU stays the default so the
-        # gamma=0.995/1.0 arms are device-CONSISTENT (a device mismatch
-        # would confound the P0-9 reward comparison); pass device="cuda"
-        # for exploratory arms.
-        device=device,
+        learning_rate=3e-4, gamma=config.gamma, ent_coef=0.01, seed=seed,
+        device=config.device,
     )
     checkpoint_dir = OUT_DIR / "ppo_checkpoints"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    # SB3's CheckpointCallback.save_freq counts CALLBACK CALLS: _on_step
-    # fires once per env step (n_envs timesteps each), so
-    # max(100_000 // n_envs, 1) = 10000 fires when num_timesteps crosses
-    # 100k - a checkpoint every ~100k timesteps (measured round 1: files at
-    # exactly 100000/200000/300000/400000_steps). Do NOT divide by the
-    # rollout length here; a transient "fix" doing that produced a
-    # checkpoint every 190 steps (thousands of junk files, reverted).
     callback = CallbackList([
         CheckpointCallback(
             save_freq=max(100_000 // n_envs, 1), save_path=str(checkpoint_dir),
@@ -172,11 +171,17 @@ def train(mode, total_timesteps=TOTAL_TIMESTEPS, workers_per_site=WORKERS_PER_SI
         SiteTransitionLogger(OUT_DIR / f"{run_name}_site_transitions.csv"),
     ])
     model.learn(total_timesteps=total_timesteps, callback=callback)
+    actual_timesteps = model.num_timesteps
     model_path = OUT_DIR / f"{run_name}_final.zip"
     vecnorm_path = OUT_DIR / f"{run_name}_final_vecnormalize.pkl"
     model.save(str(model_path))
     vec_env.save(str(vecnorm_path))
     vec_env.close()
+    # audit-v3 (2.1): save the FULL config (requested + actual timesteps)
+    # next to the model so every run is self-describing.
+    config.with_updates(requested_timesteps=total_timesteps, actual_timesteps=actual_timesteps).to_json(
+        OUT_DIR / f"{run_name}_config.json"
+    )
     return model_path, vecnorm_path
 
 
@@ -219,41 +224,46 @@ def load_policy(model_path, vecnorm_path, mode, strict_pairing=True):
     return policy_fn
 
 
-def evaluate(policy_fn, label, sites=None, years=None, preference_sets=None, gamma=GAMMA,
-             water_norm="per_action"):
-    """P1-4 (audit-v2): the policy is preference-CONDITIONED (weights are
-    part of its observation), so a single balanced-weight evaluation
-    cannot show that. `preference_sets` is a {name: weights} dict; every
-    policy is rolled out under each set and the rows tagged with the set
-    name, so the paper can show the objective vector changing as the
-    preference shifts instead of only ever reporting the balanced point."""
+def evaluate(policy_fn, label, sites=None, years=None, preference_sets=None,
+             config: RLExperimentConfig = PRIMARY_CONFIG, safety_enabled: bool = True):
+    """P1-4 (audit-v2) preference-conditioning evaluation + audit-v3
+    (3.6/3.7) intervention accounting: rows carry the SPLIT modification
+    reasons (safety_modified_rate, quota_clipped_rate,
+    delivery_shortfall_mean), and safety_enabled=False rolls out the raw
+    (unsafety-filtered) agent so agent+safety performance is never
+    attributed to the raw policy."""
     preference_sets = preference_sets or {"balanced": BALANCED_WEIGHTS}
     rows = []
     for site_id in (sites or list(SITES)):
         for year in (years or TEST_YEARS):
             for pref_name, weights in preference_sets.items():
-                env = RotationIrrigationEnv(site_id, "loam", year, water_norm=water_norm)
+                env = RotationIrrigationEnv(site_id, "loam", year, config=config,
+                                            safety_enabled=safety_enabled)
                 state = env.reset()
-                done, n_steps, n_mod = False, 0, 0
+                done, n_steps = False, 0
+                n_safety, n_quota, delivery_shortfall_sum = 0, 0, 0.0
                 undiscounted_return, discounted_return = 0.0, 0.0
                 while not done:
                     state, reward, done, info = env.step(policy_fn(state, weights))
                     r = combine_reward(reward, weights)
                     undiscounted_return += r
-                    discounted_return += (gamma ** n_steps) * r
+                    discounted_return += (config.gamma ** n_steps) * r
                     n_steps += 1
-                    n_mod += int(info["action_modified"])
-                # Single-crop sites (Ningxia) have no "wheat" key, so report
-                # per-crop columns only for the crops that site actually grows.
+                    n_safety += int(info["safety_modified"])
+                    n_quota += int(info["quota_clipped"])
+                    delivery_shortfall_sum += info["delivery_shortfall_mm"]
                 row = {
                     "policy": label, "site_id": site_id, "year": year,
                     "preference": pref_name,
+                    "safety_enabled": safety_enabled,
                     "total_yield_t_ha": info["total_yield_t_ha"],
                     "total_irrigation_mm": info["total_irrigation_mm"],
-                    "action_modified_rate": n_mod / n_steps,
-                    # P0-4c (docs/审计修复计划.md): PPO optimizes the discounted
-                    # return (gamma=0.995), not the flat sum - both are reported
-                    # so neither gets mistaken for "what the model optimizes".
+                    # audit-v3 (3.6): the intervention rate is the SAFETY
+                    # rule rate only - quota clips and delivery shortfalls
+                    # are separate, not folded into "safety intervention".
+                    "safety_modified_rate": n_safety / n_steps,
+                    "quota_clipped_rate": n_quota / n_steps,
+                    "delivery_shortfall_mean_mm": delivery_shortfall_sum / n_steps,
                     "undiscounted_return": undiscounted_return,
                     "discounted_return": discounted_return,
                 }
@@ -265,36 +275,40 @@ def evaluate(policy_fn, label, sites=None, years=None, preference_sets=None, gam
     return pd.DataFrame(rows)
 
 
-def main(n_seeds=1, seeds=None):
-    """P0-5 (docs/审计修复计划.md): n_seeds>1 trains/evaluates each mode
-    under multiple independent seeds instead of reporting one model as if
-    it were representative - each row is tagged with its seed so the
-    caller can report mean +/- std rather than a single run's number."""
+def main(n_seeds=3, seeds=None, config: RLExperimentConfig = PRIMARY_CONFIG):
+    """Primary-arm comparison: rules + PPO (config) x seeds, each PPO also
+    evaluated as the RAW agent (safety layer disabled) so agent+safety is
+    separable (audit-v3 3.7). Ablation arms (gamma/water-normalizer/
+    shaping) are trained by their own launchers and evaluated by their own
+    scripts against the same preference sets."""
     seeds = seeds or list(range(n_seeds))
-    # Rule baselines are deterministic and not preference-conditioned, so
-    # they only need the balanced evaluation; PPO models are evaluated
-    # under every preference set (P1-4, audit-v2).
     frames = [
-        evaluate(threshold_policy, "threshold_rule", preference_sets={"balanced": BALANCED_WEIGHTS}),
-        evaluate(quota_reserving_policy, "quota_reserving_rule", preference_sets={"balanced": BALANCED_WEIGHTS}),
+        evaluate(threshold_policy, "threshold_rule", preference_sets={"balanced": BALANCED_WEIGHTS},
+                 config=config),
+        evaluate(quota_reserving_policy, "quota_reserving_rule", preference_sets={"balanced": BALANCED_WEIGHTS},
+                 config=config),
     ]
     print("rule baselines done")
 
+    tag = _arm_tag(config)
     for mode in ["direct", "residual"]:
         for seed in seeds:
             suffix = "" if seed == 0 else f"_seed{seed}"
-            model_path = OUT_DIR / f"ppo_rotation_{mode}{suffix}_final.zip"
-            vecnorm_path = OUT_DIR / f"ppo_rotation_{mode}{suffix}_final_vecnormalize.pkl"
+            model_path = OUT_DIR / f"ppo_rotation_{mode}{tag}{suffix}_final.zip"
+            vecnorm_path = OUT_DIR / f"ppo_rotation_{mode}{tag}{suffix}_final_vecnormalize.pkl"
             if not model_path.exists():
-                print(f"=== training {mode} seed={seed} ===")
-                model_path, vecnorm_path = train(mode, seed=seed)
-            eval_df = evaluate(
-                load_policy(model_path, vecnorm_path, mode), f"ppo_{mode}",
-                preference_sets=PREFERENCE_EVAL_SETS,
-            )
+                print(f"=== training {mode} seed={seed} ({tag or 'primary'}) ===")
+                model_path, vecnorm_path = train(mode, config=config, seed=seed)
+            policy_fn = load_policy(model_path, vecnorm_path, mode)
+            eval_df = evaluate(policy_fn, f"ppo_{mode}", preference_sets=PREFERENCE_EVAL_SETS, config=config)
+            # audit-v3 (3.7): raw-agent rollouts with the safety layer off
+            raw_df = evaluate(policy_fn, f"ppo_{mode}_raw", preference_sets={"balanced": BALANCED_WEIGHTS},
+                              config=config, safety_enabled=False)
             eval_df["seed"] = seed
+            raw_df["seed"] = seed
             frames.append(eval_df)
-            print(f"{mode} seed={seed} evaluated")
+            frames.append(raw_df)
+            print(f"{mode} seed={seed} evaluated (safety + raw)")
 
     for frame in frames[:2]:
         frame["seed"] = None  # rule baselines are deterministic, no seed axis
@@ -307,6 +321,9 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--n-seeds", type=int, default=1)
+    parser.add_argument("--n-seeds", type=int, default=3,
+                        help="audit-v3 (3.11): formal runs require >= 3 seeds; 1 is not the default")
     args = parser.parse_args()
+    if args.n_seeds < 1:
+        raise SystemExit("--n-seeds must be >= 1")
     main(n_seeds=args.n_seeds)

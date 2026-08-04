@@ -51,8 +51,8 @@ import pandas as pd
 from aquacrop import AquaCropModel, InitialWaterContent
 
 from cropping_systems import (
-    MAIZE_HARVEST, MAIZE_PLANTING, SPRING_MAIZE_HARVEST, SPRING_MAIZE_PLANTING,
-    WHEAT_HARVEST, WHEAT_PLANTING, build_crop, is_double_crop,
+    MAIZE_HARVEST, MAIZE_PLANTING, MIN_HANDOFF_GAP_DAYS, SPRING_MAIZE_HARVEST,
+    SPRING_MAIZE_PLANTING, WHEAT_HARVEST, WHEAT_PLANTING, build_crop, is_double_crop,
 )
 from soil_moisture_init import initial_water_content as observed_initial_wc
 from soils import get_soil
@@ -164,11 +164,13 @@ def run_rotation_year(site_id, weather_df, soil_key, year, wheat_irr, maize_irr,
     maize_planting_date = pd.Timestamp(f"{year}-{MAIZE_PLANTING.replace('/', '-')}")
     wheat_harvest_date = pd.Timestamp(wheat_metrics["harvest_date"])
     gap_days = (maize_planting_date - wheat_harvest_date).days
-    if gap_days < 0:
+    # audit-v3 (3.3): an equal-date handoff is invalid too - maize must
+    # plant at least one full day after wheat's actual harvest.
+    if gap_days < MIN_HANDOFF_GAP_DAYS:
         raise RotationCalendarError(
             f"{site_id} {year}: wheat harvested {wheat_harvest_date.date()}, on/after maize's fixed planting "
-            f"date {maize_planting_date.date()} ({-gap_days} day(s) late) - recalibrate wheat_params_for('"
-            f"{site_id}') in cropping_systems.py (see calibrate_wheat_maturity.py)"
+            f"date {maize_planting_date.date()} ({gap_days} day(s) gap, min {MIN_HANDOFF_GAP_DAYS}) - "
+            f"recalibrate wheat_params_for('{site_id}') in cropping_systems.py (see calibrate_wheat_maturity.py)"
         )
     wheat_metrics["gap_days_to_maize_planting"] = gap_days
 

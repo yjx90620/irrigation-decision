@@ -54,6 +54,11 @@ WHEAT_HARVEST = "06/25"  # wheat simulation window end; actual maturity is GDD-d
 MAIZE_PLANTING = "06/15"  # after wheat harvest, standard NCP double-cropping
 MAIZE_HARVEST = "10/05"
 
+# audit-v3 (3.3): wheat's ACTUAL harvest must precede maize planting by at
+# least this many days - an equal-date handoff would hand maize a soil
+# state from a day wheat itself hadn't finished yet.
+MIN_HANDOFF_GAP_DAYS = 1
+
 DOUBLE_CROP = "wheat_maize"
 SINGLE_SPRING_MAIZE = "spring_maize"
 

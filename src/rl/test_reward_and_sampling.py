@@ -46,29 +46,37 @@ def test_fixed_site_pins_every_episode():
 
 
 def test_yield_bonus_paid_once_per_episode_not_once_per_crop():
-    """Double-crop episode: the yield_proxy component of the reward
-    vector should only show a large jump (the terminal payout) on the
-    final step, not on the wheat->maize crop switch too - the old code
-    added a yield term at both transitions. Pure shaping noise (day-to-day
-    tr_ratio swings, including the deliberate potential-reset at the crop
-    switch) empirically stays under ~0.25 in magnitude; a real terminal
-    yield payout for a non-failed season is well above that - so the
-    count of steps exceeding a threshold in between is the robust check,
-    not bounding every single step under a tight constant."""
+    """Double-crop episode (audit-v3 3.1/3.2): strict PBRS makes the
+    terminal step's yield_proxy = -Phi(final) + system_yield/system_ref
+    (Phi(absorbing terminal)=0). Check (a) the terminal step carries the
+    SYSTEM-normalized yield bonus (its yield_proxy minus the bonus is the
+    terminal -Phi term, in [-1, 0] since Phi = tr_ratio in [0,1]), and
+    (b) NO non-terminal step shows a payout-sized jump (the old
+    per-crop-payout bug added a yield term at the wheat->maize switch)."""
     LARGE_JUMP_THRESHOLD = 0.3
     env = RotationGymEnv(mode="direct", fixed_site="hebei_central", soils=["loam"], years=[2015])
     state, _ = env.reset()
     done = False
     yield_components = []
     n_steps = 0
+    terminal_info = None
     while not done:
         state, reward, done, truncated, info = env.step(2)  # ACTIONS_MM[2] == 20mm, mid-range
         yield_components.append(info["reward_vector"]["yield_proxy"])
+        if done:
+            terminal_info = info
         n_steps += 1
         if n_steps > 400:  # guard against an infinite loop if done never flips
             raise AssertionError("episode did not terminate")
 
-    assert yield_components[-1] > LARGE_JUMP_THRESHOLD, "final step should include the terminal yield payout"
+    # system-level reference for hebei: wheat 7.0 + maize 11.5
+    system_reference = 18.5
+    bonus = terminal_info["total_yield_t_ha"] / system_reference
+    # terminal yield_proxy = -Phi(final) + bonus, with Phi(final) in [0, 1]
+    assert -1.0 <= (yield_components[-1] - bonus) <= 0.0, (
+        f"terminal step should carry -Phi + system-normalized yield bonus "
+        f"(got {yield_components[-1]:.3f}, bonus {bonus:.3f})"
+    )
     large_jumps = [v for v in yield_components[:-1] if abs(v) > LARGE_JUMP_THRESHOLD]
     assert not large_jumps, (
         f"a non-terminal step's yield_proxy looks like a second yield payout (old per-crop-payout bug): {large_jumps}"
