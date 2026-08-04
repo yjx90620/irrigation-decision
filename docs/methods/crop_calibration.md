@@ -12,17 +12,18 @@
 否则轮作日历断言抛 `RotationCalendarError`）。河南/陕西/河北/北京为双季，
 宁夏无冬小麦（10/10-06/25 窗口累计 GDD 仅 ~1833，标准品种需 2200，不适宜）。
 
-### 品种参数
+### 品种参数（audit-v3 5.2 重分类：calendar-feasibility adjustment）
 - 标准品种：AquaCrop-OSPy 自带 WheatGDD（Maturity=2200, Senescence=1600,
   HIstart=1200），仅河南直接可用（GDD 余量全年份达标）。
 - 河北（Maturity=1825）、陕西（1850）、北京（1600）：由
-  `src/sim/calibrate_wheat_maturity.py` 率定——向下搜索最短 Maturity，
-  使 **1982-2025 全部年份**在充分灌溉下（最晚成熟情形）收获日距 06/15
-  留有 ≥7 天安全边际；Senescence/HIstart 按标准品种的固定比例随 Maturity
-  缩放。率定数据与结果见 `data/calibration/wheat_harvest_calendar_audit.csv`
-  （4 站点 × 44 年收获日期与空档分布；修复后 0/44 年晚于 06/15）。
-- 状态：**率定参数**（针对本项目日历约束），但"实际种植品种"本身是文献/
-  情景假设（华北冬小麦早熟品种 ~220-250 天生育期；这里用 GDD 形式表达）。
+  `src/sim/calibrate_wheat_maturity.py` 调整——向下搜索最短 Maturity，
+  使**开发窗口（1982-2010，audit-v3 5.1）**全部年份在充分灌溉下（最晚成熟
+  情形）收获日距 06/15 留有 ≥7 天安全边际；Senescence/HIstart 按标准品种的
+  固定比例随 Maturity 缩放。率定数据见 `data/calibration/wheat_harvest_calendar_audit.csv`。
+- **口径（audit-v3 5.2）**：该过程是**日历可行性调整（calendar-feasibility
+  adjustment）**——只保证"能在收获窗口前成熟"，没有真实播种/抽穗/开花/成熟
+  观测，不是作物生理校准，也不作为模型泛化证据。论文中不得称"站点校准"，
+  只能称"情景参数化（保证日历可行）"。
 
 ## 2. 夏玉米（Maize，日历驱动，双季站点）
 

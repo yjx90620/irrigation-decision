@@ -77,7 +77,11 @@ COMBO_TIMEOUT_S = 60  # generous vs the ~1-2s/combo normal case (which now
 ANNUAL_QUOTA_MM = 450.0
 ALPHAS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 SMT_LEVELS = {"conservative": [40] * 4, "moderate": [60] * 4, "aggressive": [80] * 4}
-YEARS = [2011, 2013, 2015, 2017, 2018, 2020]
+# audit-v3 (5.1): the alpha SCAN runs on the validation window only -
+# alpha selection must never use the final-test years it will be evaluated on.
+from temporal_split import SPLIT
+
+YEARS = list(SPLIT.validation_years)
 
 OUT_DIR = Path(__file__).resolve().parents[2] / "data" / "processed"
 OUT_PATH = OUT_DIR / "allocation_scan.csv"  # merged output (all sites)

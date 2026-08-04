@@ -38,7 +38,11 @@ from rotation import run_rotation_series
 
 BASELINE_SMT = [50, 50, 50, 50]
 DELTA_PP = 15  # percentage points to raise one stage by
-EVAL_YEARS = list(range(2016, 2021))  # 5 years
+# audit-v3 (5.1): MWV runs on the validation window (selection-time
+# analysis), never on the final-test years.
+from temporal_split import SPLIT
+
+EVAL_YEARS = list(SPLIT.validation_years)
 
 OUT_PATH = Path(__file__).resolve().parents[2] / "data" / "processed" / "marginal_water_value.csv"
 

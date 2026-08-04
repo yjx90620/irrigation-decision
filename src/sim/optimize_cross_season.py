@@ -58,7 +58,12 @@ from pymoo.termination import get_termination
 from rotation import run_rotation_series
 
 ANNUAL_QUOTA_MM = 450.0  # total irrigation available per rotation year
-EVAL_YEARS = [2016, 2017, 2018, 2019, 2020]
+# audit-v3 (5.1): cross-season optimization evaluates on the validation
+# window; the chosen strategy is then evaluated ONCE on final-test years
+# by the comparison pipeline.
+from temporal_split import SPLIT
+
+EVAL_YEARS = list(SPLIT.validation_years)
 
 # site's own best fixed alpha from scan_allocation.py's completed scan
 # (data/processed/allocation_scan.csv, best mean_total_yield across SMT

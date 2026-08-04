@@ -18,6 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "data"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "sim"))
 
 import numpy as np
 import pandas as pd
@@ -33,9 +34,13 @@ from residual_gym_env import (
 from rotation_env import (
     ACTIONS_MM, RotationIrrigationEnv, combine_reward, quota_reserving_policy, threshold_policy,
 )
+from sim.temporal_split import SPLIT
 from soils import STANDARD_SOILS
 
-TEST_YEARS = [2018, 2019, 2020, 2021, 2022]
+# audit-v3 (5.1): final-test years come from the single temporal split -
+# the paper's held-out evaluation window, touched only here and in the
+# transfer/migration scripts that share the same split.
+TEST_YEARS = list(SPLIT.final_test_years)
 # audit-v3 (3.8): "risk" -> "acute_stress" (a 3-day mean tr_ratio<0.5
 # binary indicator, NOT interannual downside risk).
 BALANCED_WEIGHTS = {"yield_proxy": 0.4, "water": 0.3, "cost": 0.2, "acute_stress": 0.1}

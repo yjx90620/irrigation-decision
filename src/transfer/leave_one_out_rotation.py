@@ -26,10 +26,12 @@ import pandas as pd
 from config import SITES
 from experiment_config import PRIMARY_CONFIG, RLExperimentConfig
 from rotation_env import RotationIrrigationEnv, combine_reward, threshold_policy
+from sim.temporal_split import SPLIT
 from train_rotation_compare import BALANCED_WEIGHTS, _arm_tag, load_policy
 from train_rotation_utils import train_rotation_policy
 
-TEST_YEARS = [2018, 2019, 2020, 2021, 2022]
+# audit-v3 (5.1): final-test years from the shared split.
+TEST_YEARS = list(SPLIT.final_test_years)
 SOURCE_STEPS = 200_000
 FINETUNE_STEPS = 50_000
 
