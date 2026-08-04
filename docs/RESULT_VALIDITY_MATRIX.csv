@@ -8,6 +8,15 @@ data/processed/allocation_scan_shaanxi_guanzhong.csv,rotation_era,valid_regenera
 data/processed/rotation_policy_comparison.csv,rotation_era,valid_regenerated,regenerated with P0-1/P0-2/P0-3 fixes + P1-4 preference axis (audit-v2),n/a
 data/processed/ppo_rotation_direct_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
 data/processed/ppo_rotation_direct_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_direct_gamma1_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_direct_gamma1_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_direct_gamma1_seed1_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_direct_gamma1_seed1_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_direct_gamma1_seed1_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_direct_gamma1_seed2_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_direct_gamma1_seed2_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_direct_gamma1_seed2_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_direct_gamma1_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
 data/processed/ppo_rotation_direct_seed1_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
 data/processed/ppo_rotation_direct_seed1_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
 data/processed/ppo_rotation_direct_seed1_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
@@ -15,8 +24,28 @@ data/processed/ppo_rotation_direct_seed2_final.zip,rotation_era,valid_regenerate
 data/processed/ppo_rotation_direct_seed2_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
 data/processed/ppo_rotation_direct_seed2_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
 data/processed/ppo_rotation_direct_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_direct_wq_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_direct_wq_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_direct_wq_seed1_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_direct_wq_seed1_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_direct_wq_seed1_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_direct_wq_seed2_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_direct_wq_seed2_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_direct_wq_seed2_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_direct_wq_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_gamma1_comparison.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_learning_curve.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
 data/processed/ppo_rotation_residual_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
 data/processed/ppo_rotation_residual_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_residual_gamma1_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_residual_gamma1_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_residual_gamma1_seed1_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_residual_gamma1_seed1_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_residual_gamma1_seed1_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_residual_gamma1_seed2_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_residual_gamma1_seed2_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_residual_gamma1_seed2_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_residual_gamma1_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
 data/processed/ppo_rotation_residual_seed1_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
 data/processed/ppo_rotation_residual_seed1_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
 data/processed/ppo_rotation_residual_seed1_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
@@ -24,23 +53,29 @@ data/processed/ppo_rotation_residual_seed2_final.zip,rotation_era,valid_regenera
 data/processed/ppo_rotation_residual_seed2_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
 data/processed/ppo_rotation_residual_seed2_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
 data/processed/ppo_rotation_residual_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
-data/processed/leave_one_out_rotation_transfer.csv,rotation_era,regenerate_needed,transfer in progress (beijing fold done),python src/transfer/leave_one_out_rotation.py
-data/processed/transfer_rot_finetuned_beijing_plain_final.zip,rotation_era,regenerate_needed,rotation env changed (P0-1/P0-2/P0-3),python src/transfer/leave_one_out_rotation.py
-data/processed/transfer_rot_finetuned_beijing_plain_final_vecnormalize.pkl,rotation_era,regenerate_needed,rotation env changed (P0-1/P0-2/P0-3),python src/transfer/leave_one_out_rotation.py
-data/processed/transfer_rot_finetuned_hebei_central_final.zip,rotation_era,regenerate_needed,rotation env changed (P0-1/P0-2/P0-3),python src/transfer/leave_one_out_rotation.py
-data/processed/transfer_rot_finetuned_hebei_central_final_vecnormalize.pkl,rotation_era,regenerate_needed,rotation env changed (P0-1/P0-2/P0-3),python src/transfer/leave_one_out_rotation.py
-data/processed/transfer_rot_finetuned_henan_north_final.zip,rotation_era,regenerate_needed,rotation env changed (P0-1/P0-2/P0-3),python src/transfer/leave_one_out_rotation.py
-data/processed/transfer_rot_finetuned_henan_north_final_vecnormalize.pkl,rotation_era,regenerate_needed,rotation env changed (P0-1/P0-2/P0-3),python src/transfer/leave_one_out_rotation.py
-data/processed/transfer_rot_finetuned_shaanxi_guanzhong_final.zip,rotation_era,regenerate_needed,rotation env changed (P0-1/P0-2/P0-3),python src/transfer/leave_one_out_rotation.py
-data/processed/transfer_rot_finetuned_shaanxi_guanzhong_final_vecnormalize.pkl,rotation_era,regenerate_needed,rotation env changed (P0-1/P0-2/P0-3),python src/transfer/leave_one_out_rotation.py
-data/processed/transfer_rot_source_excl_beijing_plain_final.zip,rotation_era,regenerate_needed,rotation env changed (P0-1/P0-2/P0-3),python src/transfer/leave_one_out_rotation.py
-data/processed/transfer_rot_source_excl_beijing_plain_final_vecnormalize.pkl,rotation_era,regenerate_needed,rotation env changed (P0-1/P0-2/P0-3),python src/transfer/leave_one_out_rotation.py
-data/processed/transfer_rot_source_excl_hebei_central_final.zip,rotation_era,regenerate_needed,rotation env changed (P0-1/P0-2/P0-3),python src/transfer/leave_one_out_rotation.py
-data/processed/transfer_rot_source_excl_hebei_central_final_vecnormalize.pkl,rotation_era,regenerate_needed,rotation env changed (P0-1/P0-2/P0-3),python src/transfer/leave_one_out_rotation.py
-data/processed/transfer_rot_source_excl_henan_north_final.zip,rotation_era,regenerate_needed,rotation env changed (P0-1/P0-2/P0-3),python src/transfer/leave_one_out_rotation.py
-data/processed/transfer_rot_source_excl_henan_north_final_vecnormalize.pkl,rotation_era,regenerate_needed,rotation env changed (P0-1/P0-2/P0-3),python src/transfer/leave_one_out_rotation.py
-data/processed/transfer_rot_source_excl_shaanxi_guanzhong_final.zip,rotation_era,regenerate_needed,rotation env changed (P0-1/P0-2/P0-3),python src/transfer/leave_one_out_rotation.py
-data/processed/transfer_rot_source_excl_shaanxi_guanzhong_final_vecnormalize.pkl,rotation_era,regenerate_needed,rotation env changed (P0-1/P0-2/P0-3),python src/transfer/leave_one_out_rotation.py
+data/processed/ppo_rotation_residual_wq_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_residual_wq_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_residual_wq_seed1_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_residual_wq_seed1_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_residual_wq_seed1_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_residual_wq_seed2_final.zip,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_residual_wq_seed2_final_vecnormalize.pkl,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_residual_wq_seed2_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_residual_wq_site_transitions.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/ppo_rotation_wq_comparison.csv,rotation_era,valid_regenerated,"retrained with P0-1/P0-2/P0-3 fixes, 3 seeds (audit-v2)",n/a
+data/processed/cross_season_pareto_1b_beijing_plain_loam.csv,rotation_era,regenerate_needed,P0-1 fallow bridge + P0-2 maize cultivar changed rotation physics,python src/sim/run_cross_season_all_sites.py
+data/processed/cross_season_pareto_1b_hebei_central_loam.csv,rotation_era,regenerate_needed,P0-1 fallow bridge + P0-2 maize cultivar changed rotation physics,python src/sim/run_cross_season_all_sites.py
+data/processed/cross_season_pareto_1b_henan_north_loam.csv,rotation_era,regenerate_needed,P0-1 fallow bridge + P0-2 maize cultivar changed rotation physics,python src/sim/run_cross_season_all_sites.py
+data/processed/cross_season_pareto_1b_shaanxi_guanzhong_loam.csv,rotation_era,regenerate_needed,P0-1 fallow bridge + P0-2 maize cultivar changed rotation physics,python src/sim/run_cross_season_all_sites.py
+data/processed/cross_season_pareto_beijing_plain_loam.csv,rotation_era,regenerate_needed,P0-1 fallow bridge + P0-2 maize cultivar changed rotation physics,python src/sim/run_cross_season_all_sites.py
+data/processed/cross_season_pareto_hebei_central_loam.csv,rotation_era,regenerate_needed,P0-1 fallow bridge + P0-2 maize cultivar changed rotation physics,python src/sim/run_cross_season_all_sites.py
+data/processed/cross_season_pareto_henan_north_loam.csv,rotation_era,regenerate_needed,P0-1 fallow bridge + P0-2 maize cultivar changed rotation physics,python src/sim/run_cross_season_all_sites.py
+data/processed/cross_season_pareto_shaanxi_guanzhong_loam.csv,rotation_era,regenerate_needed,P0-1 fallow bridge + P0-2 maize cultivar changed rotation physics,python src/sim/run_cross_season_all_sites.py
+data/processed/marginal_water_value.csv,rotation_era,regenerate_needed,P0-1/P0-2 changed rotation physics; P1-2 adds baseline/perturbed pairing columns,python src/sim/marginal_water_value.py
+data/processed/algorithm_comparison_hebei_central.csv,rotation_era,valid_regenerated,"audit-v2 physics, 3 seeds - NSGA-III ~ NSGA-II (0.938 vs 0.936), MOEA/D behind",n/a
+data/processed/algorithm_comparison_hebei_central_hv_summary.csv,rotation_era,valid_regenerated,"audit-v2 physics, 3 seeds - NSGA-III ~ NSGA-II (0.938 vs 0.936), MOEA/D behind",n/a
+data/processed/leave_one_out_rotation_transfer_wq.csv,rotation_era,valid_regenerated,per_quota primary-arm transfer (r=0.971 two-factor validation),n/a
+data/processed/leave_one_out_rotation_summary_wq.csv,rotation_era,valid_regenerated,derived from the wq transfer,n/a
 data/processed/environmental_fingerprints.csv,rotation_era,valid,"fingerprint code unchanged in audit-v2 (cool/warm seasons, TRAIN_YEARS)",n/a
 data/processed/site_distance_matrix.csv,rotation_era,valid,derived from environmental_fingerprints.csv,n/a
 data/processed/site_pca.csv,rotation_era,valid,derived from fingerprints,n/a
@@ -48,3 +83,6 @@ data/processed/site_clusters.csv,rotation_era,valid,derived from fingerprints,n/
 data/processed/agera5_vs_openmeteo_validation.csv,other,valid,cross-product consistency check,n/a
 data/processed/ppo_smoke_test.zip,other,valid,"CI smoke test artifact, not a result",n/a
 data/raw/cmip6,raw_data,valid_regenerated,"8/10 re-downloaded with degraded manifests (CMCC_CM2_VHR4 radiation is an upstream API gap, recorded per file); ningxia 2 files pending daily-quota reset (2026-08-04)",python src/data/download_cmip6.py
+figures/fig7_allocation_scan.png,figure,regenerate_needed,built from pre-fix rotation results,rerun after results regenerated
+figures/fig8_algorithm_comparison.png,figure,regenerate_needed,built from pre-fix rotation results,rerun after results regenerated
+figures/fig10_rotation_policy_comparison.png,figure,regenerate_needed,built from pre-fix rotation results,rerun after results regenerated
