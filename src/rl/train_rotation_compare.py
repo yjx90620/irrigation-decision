@@ -19,6 +19,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "data"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "sim"))
+# `from sim.temporal_split import SPLIT` below is package-style: it needs
+# the src/ dir itself on the path, not just the subpackage dirs.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import numpy as np
 import pandas as pd

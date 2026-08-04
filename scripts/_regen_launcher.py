@@ -19,8 +19,8 @@ MODES = ["direct", "residual"]
 SEEDS = [0, 1, 2]
 
 _HEAD = (
-    "import sys; sys.path.insert(0, 'src/rl'); sys.path.insert(0, 'src/data'); "
-    "sys.path.insert(0, 'src/sim'); "
+    "import sys; sys.path.insert(0, 'src'); sys.path.insert(0, 'src/rl'); "
+    "sys.path.insert(0, 'src/data'); sys.path.insert(0, 'src/sim'); "
     "from experiment_config import RLExperimentConfig; "
     "from train_rotation_compare import train; "
 )
