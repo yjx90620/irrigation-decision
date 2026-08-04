@@ -122,11 +122,21 @@ def safety_filter(action_mm, state, days_to_harvest, remaining_quota):
 
 
 class RotationIrrigationEnv:
-    def __init__(self, site_id, soil_key, year, annual_quota=ANNUAL_QUOTA_MM):
+    def __init__(self, site_id, soil_key, year, annual_quota=ANNUAL_QUOTA_MM, water_norm="per_action"):
+        """water_norm (audit-v2 P0-9): the per-step water/cost penalty's
+        normalizer. "per_action" (= max(ACTIONS_MM), the historical default)
+        makes the water signal dominate the return ~10:1 over the terminal
+        yield bonus (measured: -3.15 vs +0.32 on hebei 2019), driving the
+        policy to minimize water at the expense of yield. "per_quota"
+        (=/annual_quota) shrinks the per-step penalty ~11x so yield and
+        water balance at ~1.7:1 - the audit's suggested renormalization.
+        The reward scale is an experiment axis; it must be consistent
+        between an arm's training and its evaluation."""
         self.site_id = site_id
         self.soil_key = soil_key
         self.year = year
         self.annual_quota = annual_quota
+        self.water_norm = water_norm
         self._weather = load_site_weather(site_id)
 
     # --- season plumbing -------------------------------------------------
@@ -305,11 +315,15 @@ class RotationIrrigationEnv:
         new_potential = float(self.model._init_cond.tr_ratio)
         shaping_reward = SHAPING_GAMMA * new_potential - self._potential
         self._potential = new_potential
+        # audit-v2 P0-9: water_norm scales the per-step water/cost penalty
+        # (see __init__ docstring) - "per_quota" rebalances it against the
+        # terminal yield bonus instead of letting it dominate ~10:1.
+        water_denom = self.annual_quota if self.water_norm == "per_quota" else max(ACTIONS_MM)
         reward = {
             "yield_proxy": shaping_reward,
-            "water": -actual_applied / max(ACTIONS_MM),
+            "water": -actual_applied / water_denom,
             "cost": -(COST_WATER * actual_applied + COST_START * (actual_applied > 0))
-            / (COST_WATER * max(ACTIONS_MM) + COST_START),
+            / (COST_WATER * water_denom + COST_START),
             "risk": -1.0 if mean_stress < 0.5 else 0.0,
         }
         info = {

@@ -72,8 +72,13 @@ def _sample_preference(rng):
 
 class RotationGymEnv(gym.Env):
     def __init__(self, mode="direct", sites=None, soils=None, years=None, seed=None,
-                 annual_quota=ANNUAL_QUOTA_MM, base_policy=threshold_policy, fixed_site=None):
-        """fixed_site (P0-4, docs/审计修复计划.md): when set, every reset()
+                 annual_quota=ANNUAL_QUOTA_MM, base_policy=threshold_policy, fixed_site=None,
+                 water_norm="per_action"):
+        """water_norm (audit-v2 P0-9): passed through to the inner env -
+        see RotationIrrigationEnv.__init__; must match between training
+        and evaluation for the arm it belongs to.
+
+        fixed_site (P0-4, docs/审计修复计划.md): when set, every reset()
         uses this site instead of sampling from `sites`. Domain
         randomization was previously uniform per-episode over sites, but
         double-crop episodes run ~2.3x longer (~120 decision steps) than
@@ -91,6 +96,7 @@ class RotationGymEnv(gym.Env):
         self.soils = soils or list(STANDARD_SOILS)
         self.years = years or TRAIN_YEARS
         self.annual_quota = annual_quota
+        self.water_norm = water_norm
         self.base_policy = base_policy
         self._rng = random.Random(seed)
 
@@ -123,7 +129,8 @@ class RotationGymEnv(gym.Env):
         soil_key = self._rng.choice(self.soils)
         year = self._rng.choice(self.years)
         self.weights = _sample_preference(self._rng)
-        self.inner = RotationIrrigationEnv(site_id, soil_key, year, annual_quota=self.annual_quota)
+        self.inner = RotationIrrigationEnv(site_id, soil_key, year, annual_quota=self.annual_quota,
+                                           water_norm=self.water_norm)
         self._state = self.inner.reset()
         return self._encode(self._state), {}
 

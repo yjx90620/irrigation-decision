@@ -67,13 +67,13 @@ OUT_DIR = Path(__file__).resolve().parents[2] / "data" / "processed"
 TRAIN_SITES = list(SITES)
 
 
-def _make_env(rank, mode, sites, seed=0):
+def _make_env(rank, mode, sites, seed=0, water_norm="per_action"):
     # same (seed, rank) -> same per-worker RNG stream regardless of mode,
     # so direct/residual trained with the same seed see identical
     # site/year/soil/preference sequences (P0-5, docs/审计修复计划.md)
     return RotationGymEnv(
         mode=mode, sites=list(sites), soils=["loam"], years=TRAIN_YEARS,
-        fixed_site=sites[rank % len(sites)], seed=1000 * seed + rank,
+        fixed_site=sites[rank % len(sites)], seed=1000 * seed + rank, water_norm=water_norm,
     )
 
 
@@ -117,7 +117,7 @@ class SiteTransitionLogger(BaseCallback):
 
 
 def train(mode, total_timesteps=TOTAL_TIMESTEPS, workers_per_site=WORKERS_PER_SITE, sites=TRAIN_SITES,
-          seed=0, gamma=None, device="cpu"):
+          seed=0, gamma=None, device="cpu", water_norm="per_action"):
     # P0-5 (docs/审计修复计划.md): direct and residual need paired seeds and
     # identical scenario sequences to be a fair comparison, not each doing
     # its own uncontrolled domain randomization. seed drives both SB3's own
@@ -135,8 +135,11 @@ def train(mode, total_timesteps=TOTAL_TIMESTEPS, workers_per_site=WORKERS_PER_SI
     # ~122 steps - the audit requires comparing gamma=1.0. A non-default
     # gamma gets a run-name tag so the two arms never clobber each other.
     gtag = "" if eff_gamma == GAMMA else f"_gamma{int(eff_gamma)}"
-    run_name = f"ppo_rotation_{mode}{gtag}" if seed == 0 else f"ppo_rotation_{mode}{gtag}_seed{seed}"
-    env_fns = [functools.partial(_make_env, rank, mode, sites, seed=seed) for rank in range(n_envs)]
+    # audit-v2 P0-9: the reward-normalization arm (water / annual_quota)
+    # gets its own run-name tag so it never clobbers the per_action arm.
+    wtag = "" if water_norm == "per_action" else "_wq"
+    run_name = f"ppo_rotation_{mode}{gtag}{wtag}" if seed == 0 else f"ppo_rotation_{mode}{gtag}{wtag}_seed{seed}"
+    env_fns = [functools.partial(_make_env, rank, mode, sites, seed=seed, water_norm=water_norm) for rank in range(n_envs)]
     vec_env = SubprocVecEnv(env_fns)
     vec_env = VecNormalize(vec_env, norm_obs=True, norm_reward=False, clip_obs=10.0)
     model = PPO(
@@ -216,7 +219,8 @@ def load_policy(model_path, vecnorm_path, mode, strict_pairing=True):
     return policy_fn
 
 
-def evaluate(policy_fn, label, sites=None, years=None, preference_sets=None, gamma=GAMMA):
+def evaluate(policy_fn, label, sites=None, years=None, preference_sets=None, gamma=GAMMA,
+             water_norm="per_action"):
     """P1-4 (audit-v2): the policy is preference-CONDITIONED (weights are
     part of its observation), so a single balanced-weight evaluation
     cannot show that. `preference_sets` is a {name: weights} dict; every
@@ -228,7 +232,7 @@ def evaluate(policy_fn, label, sites=None, years=None, preference_sets=None, gam
     for site_id in (sites or list(SITES)):
         for year in (years or TEST_YEARS):
             for pref_name, weights in preference_sets.items():
-                env = RotationIrrigationEnv(site_id, "loam", year)
+                env = RotationIrrigationEnv(site_id, "loam", year, water_norm=water_norm)
                 state = env.reset()
                 done, n_steps, n_mod = False, 0, 0
                 undiscounted_return, discounted_return = 0.0, 0.0
