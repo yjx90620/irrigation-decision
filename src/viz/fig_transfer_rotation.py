@@ -1,10 +1,11 @@
 """Paper-3 rotation-era transfer figure (audit-v2): zero-shot / finetuned /
 rule yields per target site + the two-factor risk vs actual-gap scatter
-that validates the distance x sensitivity claim (r=0.950).
+that validates the distance x sensitivity claim (r=0.971, per_quota wq arm).
 
-Reads the regenerated leave_one_out_rotation_summary.csv and
-two_factor_risk.csv (audit-v2 physics). The legacy single-season figure
-is fig6_transfer_leave_one_out.py (--allow-legacy gated).
+Reads the regenerated leave_one_out_rotation_summary_wq.csv and
+two_factor_risk.csv (audit-v2 physics, per_quota primary arm). The legacy
+single-season figure is fig6_transfer_leave_one_out.py (--allow-legacy
+gated).
 """
 
 import sys
@@ -17,7 +18,7 @@ import numpy as np
 import pandas as pd
 from style import PALETTE, SITE_LABELS_CN, apply_style
 
-SUMMARY_PATH = Path(__file__).resolve().parents[2] / "data" / "processed" / "leave_one_out_rotation_summary.csv"
+SUMMARY_PATH = Path(__file__).resolve().parents[2] / "data" / "processed" / "leave_one_out_rotation_summary_wq.csv"
 RISK_PATH = Path(__file__).resolve().parents[2] / "data" / "processed" / "two_factor_risk.csv"
 OUT_PATH = Path(__file__).resolve().parents[2] / "figures" / "fig_transfer_rotation.png"
 
