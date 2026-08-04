@@ -36,10 +36,10 @@ OUT_DIR = Path(__file__).resolve().parents[2] / "data" / "processed"
 DIST_PATH = OUT_DIR / "site_distance_matrix.csv"
 
 
-def evaluate(policy_fn, label, site_id, years=TEST_YEARS):
+def evaluate(policy_fn, label, site_id, years=TEST_YEARS, water_norm="per_action"):
     rows = []
     for year in years:
-        env = RotationIrrigationEnv(site_id, "loam", year)
+        env = RotationIrrigationEnv(site_id, "loam", year, water_norm=water_norm)
         state = env.reset()
         done, n_steps, n_mod = False, 0, 0
         undiscounted_return, discounted_return = 0.0, 0.0
@@ -64,19 +64,20 @@ def evaluate(policy_fn, label, site_id, years=TEST_YEARS):
     return pd.DataFrame(rows)
 
 
-def run_fold(target_site):
+def run_fold(target_site, water_norm="per_action"):
     source_sites = [s for s in SITES if s != target_site]
-    print(f"=== fold: target={target_site}, sources={source_sites} ===")
+    print(f"=== fold: target={target_site}, sources={source_sites} (water_norm={water_norm}) ===")
 
     src_model, src_vecnorm = train_rotation_policy(
         source_sites, "residual", SOURCE_STEPS, f"transfer_rot_source_excl_{target_site}", checkpoint_every=None,
+        water_norm=water_norm,
     )
     zero_shot_fn = load_policy(src_model, src_vecnorm, "residual")
-    zero_shot = evaluate(zero_shot_fn, "zero_shot", target_site)
+    zero_shot = evaluate(zero_shot_fn, "zero_shot", target_site, water_norm=water_norm)
 
     ft_model, ft_vecnorm = train_rotation_policy(
         [target_site], "residual", FINETUNE_STEPS, f"transfer_rot_finetuned_{target_site}",
-        base_model_path=src_model, base_vecnormalize_path=src_vecnorm,
+        base_model_path=src_model, base_vecnormalize_path=src_vecnorm, water_norm=water_norm,
     )
     # P0-6a (docs/审计修复计划.md): evaluate with the fine-tuned
     # VecNormalize stats, not the source domain's - continuing training
@@ -85,9 +86,9 @@ def run_fold(target_site):
     # fine-tuned model observations normalized on a different
     # distribution than the one its weights were actually tuned against.
     finetuned_fn = load_policy(ft_model, ft_vecnorm, "residual")
-    finetuned = evaluate(finetuned_fn, "finetuned", target_site)
+    finetuned = evaluate(finetuned_fn, "finetuned", target_site, water_norm=water_norm)
 
-    rule = evaluate(threshold_policy, "threshold_rule", target_site)
+    rule = evaluate(threshold_policy, "threshold_rule", target_site, water_norm=water_norm)
 
     dist = pd.read_csv(DIST_PATH, index_col="site_id")
     nearest_distance = dist.loc[target_site, source_sites].min()
@@ -97,8 +98,9 @@ def run_fold(target_site):
     return combined
 
 
-def main():
-    out_path = OUT_DIR / "leave_one_out_rotation_transfer.csv"
+def main(water_norm="per_action"):
+    suffix = "" if water_norm == "per_action" else "_wq"
+    out_path = OUT_DIR / f"leave_one_out_rotation_transfer{suffix}.csv"
     existing = pd.read_csv(out_path) if out_path.exists() else pd.DataFrame()
     # audit-v2 (P0-13): a target is only "done" when its fold rows are
     # complete - every condition (zero_shot/finetuned/threshold_rule) x
@@ -124,7 +126,7 @@ def main():
         if target_site in done_targets:
             print(f"skip {target_site}, already done")
             continue
-        frames.append(run_fold(target_site))
+        frames.append(run_fold(target_site, water_norm=water_norm))
         pd.concat(frames, ignore_index=True).to_csv(out_path, index=False)
 
     print(f"saved -> {out_path}")
@@ -133,8 +135,15 @@ def main():
     df = pd.concat(frames, ignore_index=True)
     summary = df.groupby(["target_site", "condition"])["total_yield_t_ha"].mean().unstack()
     summary["yield_gap_vs_rule"] = summary["threshold_rule"] - summary["zero_shot"]
-    summary.to_csv(OUT_DIR / "leave_one_out_rotation_summary.csv")
+    summary.to_csv(OUT_DIR / f"leave_one_out_rotation_summary{suffix}.csv")
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--water-norm", default="per_action", choices=["per_action", "per_quota"],
+                        help="audit-v2 P0-9: reward-normalization arm; per_quota writes "
+                             "leave_one_out_rotation_transfer_wq.csv")
+    args = parser.parse_args()
+    main(water_norm=args.water_norm)
