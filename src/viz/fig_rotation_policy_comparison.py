@@ -1,15 +1,11 @@
 """Composite figure: 论文二's核心对比 - residual RL vs direct RL vs two rule
-baselines, from data/processed/rotation_policy_comparison.csv
-(src/rl/train_rotation_compare.py, regenerated after the P0/P1 audit
-fixes - docs/审计修复计划.md).
+baselines, from data/processed/ppo_rotation_wq_comparison.csv
+(src/rl/train_rotation_compare.py per_quota reward-rebalanced arm, the
+audit-v2 P0-9 primary; regenerated 2026-08).
 
-Updated for the regenerated data: 4 policies (added quota_reserving_rule,
-a stronger baseline than threshold_rule - P0-5), error bars (std across
-the 3 independent RL seeds x test years, or across years alone for the
-deterministic rule baselines - P0-5's multi-seed requirement), and
-discounted_return instead of the old undiscounted-only scalar_return
-(P0-4c). 4 panels: yield, irrigation, discounted return, safety-filter
-intervention rate.
+4 panels: yield, irrigation, discounted return, safety-filter
+intervention rate. Error bars: std across the 3 independent RL seeds x
+test years, or across years alone for the deterministic rule baselines.
 """
 
 import sys
@@ -21,13 +17,13 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from style import PALETTE, SITE_LABELS_CN, SITE_ORDER, apply_style
 
-DATA_PATH = Path(__file__).resolve().parents[2] / "data" / "processed" / "rotation_policy_comparison.csv"
+DATA_PATH = Path(__file__).resolve().parents[2] / "data" / "processed" / "ppo_rotation_wq_comparison.csv"
 OUT_PATH = Path(__file__).resolve().parents[2] / "figures" / "fig10_rotation_policy_comparison.png"
 
-POLICY_ORDER = ["threshold_rule", "quota_reserving_rule", "ppo_direct", "ppo_residual"]
+POLICY_ORDER = ["threshold_rule", "quota_reserving_rule", "ppo_direct_wq", "ppo_residual_wq"]
 POLICY_LABELS = {
     "threshold_rule": "阈值规则", "quota_reserving_rule": "预留配额规则",
-    "ppo_direct": "直接RL", "ppo_residual": "残差RL",
+    "ppo_direct_wq": "直接RL(wq)", "ppo_residual_wq": "残差RL(wq)",
 }
 POLICY_COLOR = dict(zip(POLICY_ORDER, PALETTE))
 
@@ -35,8 +31,7 @@ POLICY_COLOR = dict(zip(POLICY_ORDER, PALETTE))
 def main():
     apply_style()
     df = pd.read_csv(DATA_PATH)
-    # P1-4 (audit-v2): the comparison CSV now carries a `preference` axis
-    # (the policies are preference-conditioned and evaluated under 7 sets) -
+    # P1-4 (audit-v2): the comparison CSV carries a `preference` axis -
     # the headline comparison must not average across preference sets.
     df = df[df["preference"] == "balanced"]
     site_order_cn = [SITE_LABELS_CN[s] for s in SITE_ORDER]
