@@ -42,4 +42,6 @@ data/processed/_orig_*.csv
 
 # Claude Code project files (local session state)
 .claude/
-`n# Qwen Code session temp`n.qwen/tmp/
+
+# Qwen Code session temp
+.qwen/
