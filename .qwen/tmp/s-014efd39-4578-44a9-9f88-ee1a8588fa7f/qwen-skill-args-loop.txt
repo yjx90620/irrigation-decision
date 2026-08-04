@@ -1,1 +1,1 @@
-检查：wq 迁移（bg_6fddca20，折叠 2 进行中，剩 4 折叠约 4-5 小时）、算法对比（bg_c62d7773，~2.5h）。检查 leave_one_out_rotation_transfer_wq.csv 目标站点数（每完成一折叠即可更新论文三 wq 表格）、algorithm_comparison_*.csv（产出后更新论文一对比3 并生成 fig8）。迁移全部完成后：跑两因子 wq 验证（validate_against_observed_gap 对 summary_wq）并更新论文三。向用户汇报。
+检查：wq 迁移（bg_6fddca20，折叠 3 进行中，剩 3 折叠约 3-4 小时）、算法对比（bg_c62d7773）。检查 leave_one_out_rotation_transfer_wq.csv 目标站点数（河南/陕西/宁夏，宁夏是断崖关键点）、algorithm_comparison_*.csv。迁移全部 5 折叠完成后：跑两因子 wq 验证（validate_against_observed_gap 对 leave_one_out_rotation_summary_wq.csv）、更新论文三（wq 表格+两因子相关系数+叙事）。算法对比完成后更新论文一对比3。向用户汇报。
