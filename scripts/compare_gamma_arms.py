@@ -49,11 +49,11 @@ def main():
     print("\n=== site-level yields: 1.0 ===")
     print(site_means(ablation).to_string())
 
-    # verdict
+    # verdict (ablation policies carry the _gamma1 label)
     p_direct = primary[primary["policy"] == "ppo_direct"]["yield"].mean()
-    a_direct = ablation[ablation["policy"] == "ppo_direct"]["yield"].mean()
+    a_direct = ablation[ablation["policy"] == "ppo_direct_gamma1"]["yield"].mean()
     p_res = primary[primary["policy"] == "ppo_residual"]["yield"].mean()
-    a_res = ablation[ablation["policy"] == "ppo_residual"]["yield"].mean()
+    a_res = ablation[ablation["policy"] == "ppo_residual_gamma1"]["yield"].mean()
     rule = primary[primary["policy"] == "quota_reserving_rule"]["yield"].mean()
     print("\n=== verdict ===")
     print(f"direct:  0.995 {p_direct:.2f} -> 1.0 {a_direct:.2f}  (rule {rule:.2f})")
