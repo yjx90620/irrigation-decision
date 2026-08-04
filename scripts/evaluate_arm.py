@@ -30,16 +30,19 @@ def main(config: RLExperimentConfig = PRIMARY_CONFIG):
             if not model_path.exists():
                 print(f"WARNING: {model_path.name} missing - train it first")
                 continue
+            # the primary arm keeps the historical 'wq' label so fig10 /
+            # paper-claims / papers keep reading ppo_direct_wq etc.
+            label = f"ppo_{mode}_wq" if not tag else f"ppo_{mode}{tag}"
             eval_df = evaluate(
-                load_policy(model_path, vecnorm_path, mode), f"ppo_{mode}{tag or '_primary'}",
+                load_policy(model_path, vecnorm_path, mode), label,
                 preference_sets=PREFERENCE_EVAL_SETS, config=config,
             )
             eval_df["seed"] = seed
             frames.append(eval_df)
-            print(f"evaluated ppo_{mode}{tag or '_primary'} seed={seed}", flush=True)
+            print(f"evaluated {label} seed={seed}", flush=True)
     if frames:
         combined = pd.concat(frames, ignore_index=True)
-        out_path = OUT_DIR / f"ppo_rotation_{tag or 'primary'}_comparison.csv"
+        out_path = OUT_DIR / f"ppo_rotation_{tag or 'wq'}_comparison.csv"
         combined.to_csv(out_path, index=False)
         print(f"saved -> {out_path} ({len(combined)} rows)", flush=True)
 
