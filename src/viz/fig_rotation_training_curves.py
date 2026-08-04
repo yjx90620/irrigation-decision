@@ -25,12 +25,15 @@ from style import PALETTE, apply_style
 DATA_PATH = Path(__file__).resolve().parents[2] / "data" / "processed" / "ppo_rotation_learning_curve.csv"
 OUT_PATH = Path(__file__).resolve().parents[2] / "figures" / "fig_rl_training_curves_rotation.png"
 
-MODE_LABELS = {"direct": "直接RL (γ=0.995)", "residual": "残差RL (γ=0.995)"}
-MODE_COLOR = {"direct": PALETTE[0], "residual": PALETTE[1]}
+MODE_LABELS = {"direct": "直接RL (per_action)", "residual": "残差RL (per_action)",
+               "direct_wq": "直接RL (per_quota, 主臂)", "residual_wq": "残差RL (per_quota, 主臂)"}
+MODE_COLOR = {"direct": PALETTE[0], "residual": PALETTE[1],
+              "direct_wq": "#d62728", "residual_wq": "#7f7f7f"}
+MODE_STYLE = {"direct": "-", "residual": "-", "direct_wq": "--", "residual_wq": "--"}
 
 
 def base_run(policy: str) -> str:
-    # "ppo_rotation_direct_seed1" -> "ppo_rotation_direct" (keep _gammaN tags)
+    # "ppo_rotation_direct_seed1" -> "ppo_rotation_direct"; keep _wq/_gamma1 tags
     return re.sub(r"_seed\d+$", "", policy)
 
 
@@ -38,7 +41,7 @@ def main():
     apply_style()
     df = pd.read_csv(DATA_PATH)
     df["mode"] = df["policy"].map(base_run)
-    # keep only the gamma=0.995 arm (gamma1 checkpoints are evaluated later)
+    # keep the per_action (primary-for-curve-comparison) + wq arms; drop gamma1
     df = df[~df["mode"].str.contains("_gamma1", na=False)]
 
     fig, axes = plt.subplots(1, 2, figsize=(15, 5.5))
@@ -46,13 +49,15 @@ def main():
 
     for ax, metric, title in zip(axes, ["total_yield_t_ha", "total_irrigation_mm"],
                                  ["(a) 系统总产量随训练步数", "(b) 总灌溉量随训练步数"]):
-        for mode in ["direct", "residual"]:
+        for mode in ["direct", "residual", "direct_wq", "residual_wq"]:
             sub = df[df["mode"] == f"ppo_rotation_{mode}"]
+            if sub.empty:
+                continue
             g = sub.groupby("timesteps")[metric].agg(["mean", "std"])
-            ax.plot(g.index, g["mean"], "o-", color=MODE_COLOR[mode], label=MODE_LABELS[mode])
+            ax.plot(g.index, g["mean"], MODE_STYLE[mode], color=MODE_COLOR[mode], label=MODE_LABELS[mode])
             ax.fill_between(g.index, g["mean"] - g["std"], g["mean"] + g["std"],
-                            color=MODE_COLOR[mode], alpha=0.15)
-        # rule-baseline reference lines for yield (balanced evaluation, mean over sites in the figure)
+                            color=MODE_COLOR[mode], alpha=0.10)
+        # rule-baseline reference lines for yield (balanced evaluation)
         if metric == "total_yield_t_ha":
             ax.axhline(15.45, color="gray", linestyle="--", linewidth=1, label="预留配额规则 (15.5 t/ha 参照)")
             ax.axhline(14.21, color="darkgray", linestyle=":", linewidth=1, label="阈值规则 (14.2 t/ha 参照)")
