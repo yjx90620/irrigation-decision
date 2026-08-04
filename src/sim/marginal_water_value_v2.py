@@ -37,6 +37,7 @@ import numpy as np
 import pandas as pd
 
 from config import SITES
+from cropping_systems import CROP_STAGES, is_double_crop
 from experiment_config import PRIMARY_CONFIG
 from rotation_env import RotationIrrigationEnv, threshold_policy
 from temporal_split import SPLIT
@@ -46,12 +47,10 @@ DELTAS = [5.0, 10.0, 15.0]
 EPSILON = 1.0  # delta_irr must exceed 1mm to define a marginal response
 OUT_PATH = Path(__file__).resolve().parents[2] / "data" / "processed" / "marginal_response_v2.csv"
 
-# calendar stage boundaries per crop (month/day) - see module docstring
-STAGE_RANGES = {
-    "wheat": [("10/10", "02/28"), ("03/01", "04/14"), ("04/15", "05/14"), ("05/15", "06/25")],
-    "maize": [("06/15", "07/14"), ("07/15", "08/09"), ("08/10", "08/29"), ("08/30", "10/05")],
-    "spring_maize": [("04/25", "05/31"), ("06/01", "07/09"), ("07/10", "08/09"), ("08/10", "09/30")],
-}
+# audit-v3 (6.5): the calendar stage boundaries now live in
+# cropping_systems.py as CROP_STAGES - the single source shared with
+# fingerprint.py's crop-stage climate features.
+STAGE_RANGES = CROP_STAGES
 
 
 def _stage_midpoint(crop, stage_idx, year):
@@ -102,9 +101,9 @@ def compute_mwv_for_site(site_id):
     for year in YEARS:
         schedule, _ = _schedule(site_id, year)
         for crop in STAGE_RANGES:
-            if crop == "wheat" and not _double_crop(site_id):
+            if crop == "wheat" and not is_double_crop(site_id):
                 continue
-            if crop == "spring_maize" and _double_crop(site_id):
+            if crop == "spring_maize" and is_double_crop(site_id):
                 continue
             for stage_idx in range(4):
                 pulse = _stage_midpoint(crop, stage_idx, year)
@@ -128,12 +127,6 @@ def compute_mwv_for_site(site_id):
                         "status": "success" if mwv is not None else "undefined_no_actual_delta",
                     })
     return pd.DataFrame(rows)
-
-
-def _double_crop(site_id):
-    from cropping_systems import is_double_crop
-
-    return is_double_crop(site_id)
 
 
 def main():

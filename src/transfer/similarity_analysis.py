@@ -27,6 +27,15 @@ CLIMATE_FEATURES = [
     "cool_season_hot_days", "cool_season_dry_spell_days",
     "warm_season_precip_mm", "warm_season_et0_mm", "warm_season_gdd",
     "warm_season_hot_days", "warm_season_dry_spell_days",
+] + [
+    # audit-v3 (6.5): crop-stage climate features (same stage calendar as
+    # marginal_water_value_v2.py) - names derived from the same conventions
+    # as fingerprint.py's _season_stats prefixes, kept explicit here so the
+    # distance computation is auditable.
+    f"{crop}_stage{stage_idx}_{feature}"
+    for crop in ("wheat", "maize")
+    for stage_idx in range(1, 5)
+    for feature in ("precip_mm", "et0_mm", "gdd", "hot_days", "dry_spell_days")
 ]
 
 

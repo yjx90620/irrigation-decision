@@ -117,6 +117,20 @@ SUMMER_MAIZE_PARAMS = dict(
 # used unmodified.
 SPRING_MAIZE_PARAMS = dict()
 
+# audit-v3 (6.5): crop-stage calendar partitions - the single source of
+# truth for "which 4 calendar stages does a crop's growing window split
+# into". Calendar-based, pre-defined (NOT AquaCrop's internal growth
+# stages, which are not exposed with stable dates); the papers state the
+# calendar rule. Shared by marginal_water_value_v2.py (stage-wise marginal
+# yield response) and fingerprint.py (crop-stage climate features).
+CROP_STAGES = {
+    "wheat": [("10/10", "02/28"), ("03/01", "04/14"), ("04/15", "05/14"), ("05/15", WHEAT_HARVEST)],
+    "maize": [("06/15", "07/14"), ("07/15", "08/09"), ("08/10", "08/29"), ("08/30", MAIZE_HARVEST)],
+    "spring_maize": [
+        ("04/25", "05/31"), ("06/01", "07/09"), ("07/10", "08/09"), ("08/10", SPRING_MAIZE_HARVEST),
+    ],
+}
+
 
 def system_for(site_id: str) -> str:
     return CROPPING_SYSTEMS[site_id]["system"]
