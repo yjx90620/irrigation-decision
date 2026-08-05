@@ -100,9 +100,11 @@ def robustness_rows(site_id: str, weather_df, label: str) -> dict:
             "full_irrigation": ([100] * 4, 0.5),
         }
     else:
+        # single-crop site: no wheat/maize split, the single crop gets the
+        # FULL annual quota (alpha=1.0), never a halved 450*0.5 cap.
         policies = {
-            "threshold": ([50] * 4, 0.5),
-            "full_irrigation": ([100] * 4, 0.5),
+            "threshold": ([50] * 4, 1.0),
+            "full_irrigation": ([100] * 4, 1.0),
         }
     for name, (smt, alpha) in policies.items():
         wheat, maize = _smt_irr(smt, alpha)
