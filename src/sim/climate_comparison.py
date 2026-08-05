@@ -68,12 +68,21 @@ def build_future_weather_cached(site_id: str) -> pd.DataFrame:
     return df
 
 
-def _smt_irr(smt, alpha):
+def _irr_factories(smt, alpha, single_crop=False):
+    """Wheat/maize IrrigationManagement factories. Single-crop sites
+    (ningxia spring maize) have no wheat/maize split: the crop gets the
+    FULL annual quota on whichever factory the sim uses for it (spring
+    maize is driven by the maize factory), never 450*(1-alpha) = 0."""
+    if single_crop:
+        cap_wheat = cap_maize = 450.0
+    else:
+        cap_wheat, cap_maize = 450.0 * alpha, 450.0 * (1 - alpha)
+
     def wheat():
-        return IrrigationManagement(irrigation_method=1, SMT=list(smt), MaxIrrSeason=450.0 * alpha)
+        return IrrigationManagement(irrigation_method=1, SMT=list(smt), MaxIrrSeason=cap_wheat)
 
     def maize():
-        return IrrigationManagement(irrigation_method=1, SMT=list(smt), MaxIrrSeason=450.0 * (1 - alpha))
+        return IrrigationManagement(irrigation_method=1, SMT=list(smt), MaxIrrSeason=cap_maize)
 
     return wheat, maize
 
@@ -95,19 +104,19 @@ def robustness_rows(site_id: str, weather_df, label: str) -> dict:
     if is_double_crop(site_id):
         smt_best, alpha_best = _best_scan_combo(site_id)
         policies = {
-            "scan_best": (SMT_LEVELS[smt_best], alpha_best),
-            "uniform_threshold": ([50] * 4, 0.5),
-            "full_irrigation": ([100] * 4, 0.5),
+            "scan_best": (SMT_LEVELS[smt_best], alpha_best, False),
+            "uniform_threshold": ([50] * 4, 0.5, False),
+            "full_irrigation": ([100] * 4, 0.5, False),
         }
     else:
-        # single-crop site: no wheat/maize split, the single crop gets the
-        # FULL annual quota (alpha=1.0), never a halved 450*0.5 cap.
+        # single-crop site: no wheat/maize split - the crop gets the FULL
+        # annual quota via the single_crop=True factories (alpha unused).
         policies = {
-            "threshold": ([50] * 4, 1.0),
-            "full_irrigation": ([100] * 4, 1.0),
+            "threshold": ([50] * 4, 0.5, True),
+            "full_irrigation": ([100] * 4, 0.5, True),
         }
-    for name, (smt, alpha) in policies.items():
-        wheat, maize = _smt_irr(smt, alpha)
+    for name, (smt, alpha, single_crop) in policies.items():
+        wheat, maize = _irr_factories(smt, alpha, single_crop=single_crop)
         df = run_rotation_years_independent(site_id, "loam", YEARS, wheat, maize, weather_df=weather_df)
         y, i = _system_means(df)
         rows[name] = (y, i)
