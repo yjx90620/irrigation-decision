@@ -1,0 +1,10 @@
+{
+  "gamma": 0.995,
+  "shaping_mode": "potential",
+  "water_normalizer": "annual_quota",
+  "device": "cpu",
+  "seed": 0,
+  "deterministic_torch": true,
+  "requested_timesteps": 400000,
+  "actual_timesteps": 404480
+}

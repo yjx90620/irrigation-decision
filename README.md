@@ -2,6 +2,18 @@
 
 灌溉决策研究项目仓库。总体方案见 [docs/研究方案.md](docs/研究方案.md)：数字农田与多目标灌溉基准构建 → 多目标协同灌溉决策模型 → 跨区域动态迁移与适应性验证，三个研究内容依次衔接。
 
+## 第三轮外部审计整改（audit-v3，2026-08）
+
+第三轮外部 AI 交叉验证（19 项指控，18 项属实）已全部整改完成（代码），全量重跑与论文终稿
+随本仓库更新。逐项核实与修复记录见 [docs/AUDIT_FIX_LOG_V3.md](docs/AUDIT_FIX_LOG_V3.md)；
+本轮修复要点：统一时间分割（development/validation/final_test，消除选择-测试泄漏）、
+RL 环境重写（严格 PBRS、系统级产量、实际施水、配置对象共享 gamma）、MWV 改为固定剂量法、
+迁移新增 scratch/目标域专家上界臂、指纹按作物期细化、两因子风险降级为探索性证据
+（分层 bootstrap CI + 留一降级表）、论文数字单一来源（paper_claims.csv）、
+legacy 单季原型脚本加 `--allow-legacy` 门禁。结果状态以
+[docs/RESULT_VALIDITY_MATRIX.csv](docs/RESULT_VALIDITY_MATRIX.csv) 为准，
+复现链见 [docs/RESULT_PROVENANCE.md](docs/RESULT_PROVENANCE.md)。
+
 ## 第二轮外部审计修复（audit-v2，2026-08，代码已修复、结果重跑进行中）
 
 第二轮外部 AI 交叉验证又发现一批真实问题，已逐条核实并按 [docs/AUDIT_FIX_LOG.md](docs/AUDIT_FIX_LOG.md)

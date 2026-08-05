@@ -49,7 +49,9 @@ def main():
         ("total_yield_t_ha", "(a) 系统总产量", "t/ha"),
         ("total_irrigation_mm", "(b) 总灌溉量", "mm"),
         ("discounted_return", "(c) 折扣回报 (gamma=0.995)", ""),
-        ("action_modified_rate", "(d) 安全层介入率", "比例"),
+        # audit-v3 (3.6): the intervention rate is the safety-rule rate
+        # only (quota clips / delivery shortfalls are separate columns).
+        ("safety_modified_rate", "(d) 安全层介入率", "比例"),
     ]
     for ax, (col, title, unit) in zip(axes, metrics):
         grouped = df.groupby(["site_id", "policy"])[col]
