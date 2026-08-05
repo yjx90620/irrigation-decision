@@ -2,14 +2,10 @@
 scan_allocation.py's completed scan), at a larger search budget than the
 original 对比1 (which only had an arbitrary alpha=0.5 control available).
 
-Only the 3 sites the alpha scan actually completed have a scan-determined
-best alpha (data/processed/allocation_scan.csv) - beijing_plain's alpha
-scan never finished (all combos hit a confirmed AquaCrop-internal hang
-tied to year 2013 + its short wheat cultivar, see scan_allocation.py and
-论文一) and ningxia_irrigation is single-crop with no split to compare, so
-both are out of scope for this specific comparison. beijing_plain still
-has its original joint-vs-0.5 对比1 result (cross_season_pareto_
-beijing_plain_loam.csv) - just not the strengthened fixed-best control.
+The 4 double-crop sites' scans are complete (allocation_scan*.csv +
+best_fixed_alpha.csv, audit-v3 7.1 single source), so all four get the
+strengthened fixed-best control; ningxia_irrigation is single-crop with
+no split to compare, out of scope.
 
 Larger budget than the original run (pop=48/gen=30 vs 32/20, ~2.25x
 evaluations) since this is the version meant to be the paper's headline
@@ -21,8 +17,10 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "utils"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "data"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "sim"))
 
-from optimize_cross_season import BEST_FIXED_ALPHA
+from optimize_cross_season import best_fixed_alpha
 from run_manifest import csv_result_complete
 
 SCRIPT = Path(__file__).resolve().parent / "optimize_cross_season.py"
@@ -35,6 +33,10 @@ N_GEN = 30
 # audit-v2 (P0-13): a result file that merely exists is not "done".
 RESULT_COLS = ["total_yield_t_ha", "total_irrigation_mm", "water_loss_mm", "yield_cv", "mode"]
 
+# audit-v3 (7.1): sites with a scan-derived best fixed alpha - read from
+# the single source (best_fixed_alpha.csv via best_fixed_alpha()).
+SITES_WITH_FIXED_ALPHA = ["hebei_central", "henan_north", "shaanxi_guanzhong", "beijing_plain"]
+
 
 def main():
     # optimize_cross_season.py's --site mode always writes to
@@ -44,7 +46,8 @@ def main():
     # of letting the subprocess silently overwrite paper 1's existing result.
     procs = {}
     backups = {}
-    for site_id in BEST_FIXED_ALPHA:
+    for site_id in SITES_WITH_FIXED_ALPHA:
+        assert best_fixed_alpha(site_id) is not None, f"{site_id} missing best fixed alpha"
         out_path = OUT_DIR / f"cross_season_pareto_1b_{site_id}_loam.csv"
         if csv_result_complete(out_path, RESULT_COLS, min_rows=1):
             print(f"skip {site_id}, complete result exists")

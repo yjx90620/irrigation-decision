@@ -23,6 +23,14 @@ P1-1 (docs/审计修复计划.md): two issues fixed here.
    the same period it would later be evaluated against. Restricted to
    TRAIN_YEARS (matches src/rl/residual_gym_env.py's training split).
 
+audit-v3 (6.5): on top of the cool/warm season blocks, the fingerprint
+is now also crop-stage-resolved - the same 4 calendar stages per crop
+that marginal_water_value_v2.py measures yield response on (CROP_STAGES
+in src/sim/cropping_systems.py is the single source), again computed
+for EVERY site regardless of what grows there. So the feature set is
+unified (identical columns for all sites) AND aligned with the
+decision-relevant stages of the rotation calendar.
+
 Only the climate block actually differentiates sites right now: soil is
 still the same 3 standard AquaCrop profiles everywhere (SoilGrids access
 is blocked, see src/data/README.md), and the seasonal water cap/decision
@@ -44,7 +52,7 @@ from aquacrop import Crop
 from aquacrop.solution.growing_degree_day import growing_degree_day
 
 from config import SITES
-from cropping_systems import is_double_crop
+from cropping_systems import CROP_STAGES, is_double_crop
 from residual_gym_env import TRAIN_YEARS
 from rotation import MAIZE_HARVEST, MAIZE_PLANTING, WHEAT_PLANTING
 from soils import get_soil
@@ -57,6 +65,15 @@ WARM_SEASON = (MAIZE_PLANTING, MAIZE_HARVEST)  # 06/15 - 10/05
 
 WHEAT_REF_CROP = Crop("WheatGDD", planting_date="10/10", harvest_date="06/25", Maturity=1, Senescence=1, HIstart=1)
 MAIZE_REF_CROP = Crop("Maize", planting_date="06/15", harvest_date="10/05")
+
+# audit-v3 (6.5): crop-stage climate features - the same 4 calendar stages
+# per crop that marginal_water_value_v2.py measures yield response on
+# (CROP_STAGES in cropping_systems.py is the single source), computed for
+# EVERY site regardless of what is actually planted, exactly like the
+# cool/warm season blocks: a calendar-based split, not a claim about what
+# grows where. This makes the fingerprint crop-stage-resolved (task-aligned
+# with where water decisions matter) while staying unified across sites.
+STAGE_CROPS = ("wheat", "maize")
 
 
 def _precipitation_concentration_index(daily: pd.DataFrame) -> float:
@@ -118,6 +135,12 @@ def compute_site_fingerprint(site_id: str) -> dict:
     row = {"site_id": site_id, "cropping_system_double_crop": int(is_double_crop(site_id))}
     row.update(_season_stats(weather, *COOL_SEASON, WHEAT_REF_CROP, "cool_season"))
     row.update(_season_stats(weather, *WARM_SEASON, MAIZE_REF_CROP, "warm_season"))
+
+    # audit-v3 (6.5): crop-stage block - per-calendar-stage climate features
+    # for wheat and maize, computed for every site (see STAGE_CROPS note).
+    for crop, ref_crop in (("wheat", WHEAT_REF_CROP), ("maize", MAIZE_REF_CROP)):
+        for stage_idx, (start, end) in enumerate(CROP_STAGES[crop], start=1):
+            row.update(_season_stats(weather, start, end, ref_crop, f"{crop}_stage{stage_idx}"))
 
     weather["year"] = weather["Date"].dt.year
     per_year_precip = weather.groupby("year")["Precipitation"].sum()

@@ -14,6 +14,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+# audit-v3 (8): legacy data script guard - single-season prototype
+# checkpoints are invalidated; refuse to run without --allow-legacy.
+if __name__ == "__main__" and "--allow-legacy" not in sys.argv:
+    raise SystemExit(
+        "reconstruct_learning_curve.py is a DEPRECATED single-season prototype tool "
+        "(audit-v2 P0-12); pass --allow-legacy to run it for development record only."
+    )
+
 import pandas as pd
 
 from evaluate_policy import load_ppo_policy, run_episode

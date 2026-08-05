@@ -68,15 +68,27 @@ def _extraterrestrial_radiation(lat_deg, doy):
     )
 
 
-def penman_monteith_et0(tmax, tmin, rs, wind10, rh_mean, lat_deg, doy, elevation_m=50.0):
+def penman_monteith_et0(tmax, tmin, rs, wind10, rh_mean, lat_deg, doy, elevation_m=50.0,
+                        rh_max=None, rh_min=None):
     """Daily ET0 (mm). rs = incoming shortwave (MJ m-2 d-1), wind10 = 10m
-    wind speed (m/s), rh_mean = mean relative humidity (%)."""
+    wind speed (m/s), rh_mean = mean relative humidity (%).
+
+    audit-v3 (4.8): actual vapour pressure uses FAO-56 eq. 17 when
+    RHmax/RHmin are available (the proper formulation), falling back to
+    the documented ea = es(Tmean) x rh_mean/100 approximation otherwise -
+    the approximation's deviation from eq. 17 is the main source of the
+    remaining bias against reference implementations."""
     tmean = (tmax + tmin) / 2
     # 10m -> 2m wind, FAO-56 eq. 47
     u2 = wind10 * 4.87 / np.log(67.8 * 10 - 5.42)
 
     es = (_saturation_vapour_pressure(tmax) + _saturation_vapour_pressure(tmin)) / 2
-    ea = es * rh_mean / 100
+    if rh_max is not None and rh_min is not None:
+        # FAO-56 eq. 17: ea = [e(Tmin).RHmax + e(Tmax).RHmin] / 2
+        ea = (_saturation_vapour_pressure(tmin) * rh_max / 100
+              + _saturation_vapour_pressure(tmax) * rh_min / 100) / 2
+    else:
+        ea = es * rh_mean / 100
     delta = 4098 * _saturation_vapour_pressure(tmean) / (tmean + 237.3) ** 2
 
     pressure = 101.3 * ((293 - 0.0065 * elevation_m) / 293) ** 5.26
@@ -85,6 +97,8 @@ def penman_monteith_et0(tmax, tmin, rs, wind10, rh_mean, lat_deg, doy, elevation
     ra = _extraterrestrial_radiation(lat_deg, doy)
     rso = (0.75 + 2e-5 * elevation_m) * ra  # clear-sky radiation
     rns = (1 - ALBEDO) * rs
+    # FAO-56 eq. 39 cloud factor: Rs/Rso clipped to [0, 1] (FAO: the ratio
+    # must be <= 1; values >1 indicate measurement/reflection artifacts).
     with np.errstate(divide="ignore", invalid="ignore"):
         cloud_factor = np.where(rso > 0, np.clip(rs / rso, 0.0, 1.0), 0.0)
     rnl = (

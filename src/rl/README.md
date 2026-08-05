@@ -1,3 +1,14 @@
+> **DEPRECATED（audit-v2 P0-12 / audit-v3 8）**：本文档以下内容全部是**单季原型**（`env.py` /
+> `gym_env.py` / `evaluate_policy.py` / `train_utils.py` / `train_ppo.py` / `reconstruct_learning_curve.py` /
+> `benchmark_device.py` / `train_ppo_smoke_test.py`），其产出已作废（归档于
+> `data/processed/invalidated/legacy_v1/`），**不得作为论文结论引用**。这些脚本现在拒绝
+> 无 `--allow-legacy` 运行（audit-v3 8：防误跑）。轮作期正式管线：
+> - 环境：`rotation_env.py`（严格 PBRS、系统级产量、日历 days_to_harvest、实际施水、安全层开关）
+> - 训练/评估：`train_rotation_compare.py` / `train_rotation_utils.py` / `scripts/evaluate_arm.py`
+>   （配置驱动，`experiment_config.RLExperimentConfig`，3 seed）
+> - 迁移：`src/transfer/leave_one_out_rotation.py`；消融：`scripts/regen_train_ppo.py` 等 launcher
+> 运行顺序见 [docs/RESULT_PROVENANCE.md](../../docs/RESULT_PROVENANCE.md)。
+
 偏好条件化强化学习灌溉决策（对应研究方案 5.4—5.12）。依赖 `src/sim/` 的基线实验结果（用于校准产量奖励的产量上限）。
 
 - **`env.py`** — 核心环境 `IrrigationEnv`：把 AquaCropModel 包装成可逐 3 天交互的环境。

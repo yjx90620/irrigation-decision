@@ -51,8 +51,8 @@ import pandas as pd
 from aquacrop import AquaCropModel, InitialWaterContent
 
 from cropping_systems import (
-    MAIZE_HARVEST, MAIZE_PLANTING, SPRING_MAIZE_HARVEST, SPRING_MAIZE_PLANTING,
-    WHEAT_HARVEST, WHEAT_PLANTING, build_crop, is_double_crop,
+    MAIZE_HARVEST, MAIZE_PLANTING, MIN_HANDOFF_GAP_DAYS, SPRING_MAIZE_HARVEST,
+    SPRING_MAIZE_PLANTING, WHEAT_HARVEST, WHEAT_PLANTING, build_crop, is_double_crop,
 )
 from soil_moisture_init import initial_water_content as observed_initial_wc
 from soils import get_soil
@@ -164,11 +164,13 @@ def run_rotation_year(site_id, weather_df, soil_key, year, wheat_irr, maize_irr,
     maize_planting_date = pd.Timestamp(f"{year}-{MAIZE_PLANTING.replace('/', '-')}")
     wheat_harvest_date = pd.Timestamp(wheat_metrics["harvest_date"])
     gap_days = (maize_planting_date - wheat_harvest_date).days
-    if gap_days < 0:
+    # audit-v3 (3.3): an equal-date handoff is invalid too - maize must
+    # plant at least one full day after wheat's actual harvest.
+    if gap_days < MIN_HANDOFF_GAP_DAYS:
         raise RotationCalendarError(
             f"{site_id} {year}: wheat harvested {wheat_harvest_date.date()}, on/after maize's fixed planting "
-            f"date {maize_planting_date.date()} ({-gap_days} day(s) late) - recalibrate wheat_params_for('"
-            f"{site_id}') in cropping_systems.py (see calibrate_wheat_maturity.py)"
+            f"date {maize_planting_date.date()} ({gap_days} day(s) gap, min {MIN_HANDOFF_GAP_DAYS}) - "
+            f"recalibrate wheat_params_for('{site_id}') in cropping_systems.py (see calibrate_wheat_maturity.py)"
         )
     wheat_metrics["gap_days_to_maize_planting"] = gap_days
 
@@ -189,7 +191,8 @@ def run_rotation_year(site_id, weather_df, soil_key, year, wheat_irr, maize_irr,
     return rows, th_after_maize, maize_metrics["harvest_date"]
 
 
-def run_rotation_series(site_id, soil_key, years, wheat_irr_factory, maize_irr_factory, initial_wc=None):
+def run_rotation_series(site_id, soil_key, years, wheat_irr_factory, maize_irr_factory, initial_wc=None,
+                        weather_df=None):
     """Multi-year continuous rotation - soil water carries across the whole
     series, not just within a year, so a dry year's depletion propagates
     forward the way it does in a real field. Years must be consecutive
@@ -203,7 +206,10 @@ def run_rotation_series(site_id, soil_key, years, wheat_irr_factory, maize_irr_f
     single-season prototype had almost no irrigation signal. Observed
     autumn wetness varies a lot between years (Hebei 2018-10-10 sat at 7%
     of plant-available capacity vs 65% in 2020), and that variation is
-    itself part of what an irrigation policy has to respond to."""
+    itself part of what an irrigation policy has to respond to.
+
+    audit-v3 对比5: weather_df overrides the observed weather (used to
+    evaluate strategies under the CMIP6 delta-change future series)."""
     years = list(years)
     for a, b in zip(years, years[1:]):
         if b != a + 1:
@@ -211,7 +217,7 @@ def run_rotation_series(site_id, soil_key, years, wheat_irr_factory, maize_irr_f
                 f"run_rotation_series requires consecutive years, got {a} -> {b}; "
                 f"use run_rotation_years_independent for non-consecutive samples"
             )
-    weather_df = load_site_weather(site_id)
+    weather_df = load_site_weather(site_id) if weather_df is None else weather_df
     if initial_wc is None:
         if is_double_crop(site_id):
             first_sowing = f"{years[0] - 1}-{WHEAT_PLANTING.replace('/', '-')}"
@@ -236,7 +242,8 @@ def run_rotation_series(site_id, soil_key, years, wheat_irr_factory, maize_irr_f
     return pd.DataFrame(all_rows)
 
 
-def run_rotation_years_independent(site_id, soil_key, years, wheat_irr_factory, maize_irr_factory):
+def run_rotation_years_independent(site_id, soil_key, years, wheat_irr_factory, maize_irr_factory,
+                                   weather_df=None):
     """Same per-year simulation as run_rotation_series, but each year in
     `years` starts fresh from ITS OWN observed autumn soil moisture instead
     of carrying the profile over from the previous entry in the list.
@@ -255,8 +262,10 @@ def run_rotation_years_independent(site_id, soil_key, years, wheat_irr_factory, 
     scan_allocation.py's question is "does the optimal split vary by year
     *type*", which independent samples answer more cleanly than one
     particular stitched-together trajectory would anyway.
-    """
-    weather_df = load_site_weather(site_id)
+
+    audit-v3 对比5: weather_df overrides the observed weather (used to
+    evaluate strategies under the CMIP6 delta-change future series)."""
+    weather_df = load_site_weather(site_id) if weather_df is None else weather_df
     all_rows = []
     for year in years:
         if is_double_crop(site_id):

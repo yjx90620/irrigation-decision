@@ -12,6 +12,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "rl"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "data"))
 
+# audit-v3 (8): legacy data script guard - single-season prototype outputs
+# are invalidated; refuse to run without --allow-legacy.
+if __name__ == "__main__" and "--allow-legacy" not in sys.argv:
+    raise SystemExit(
+        "instance_weighted.py is a DEPRECATED single-season prototype (audit-v2 P0-12); its "
+        "outputs are invalid for paper claims. Pass --allow-legacy to run it for "
+        "development record only."
+    )
+
 import pandas as pd
 
 from config import SITES

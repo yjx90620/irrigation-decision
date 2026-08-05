@@ -35,6 +35,7 @@ import numpy as np
 from gymnasium import spaces
 
 from config import SITES
+from experiment_config import PRIMARY_CONFIG, RLExperimentConfig
 from rotation_env import (
     ACTIONS_MM, ANNUAL_QUOTA_MM, RotationIrrigationEnv, combine_reward, threshold_policy,
 )
@@ -46,7 +47,9 @@ STATE_KEYS = [
     "precip_next_3d", "precip_next_7d", "et0_next_7d", "hot_days_next_7d",
     "remaining_annual_quota",
 ]
-PREFERENCE_KEYS = ["yield_proxy", "water", "cost", "risk"]
+# audit-v3 (3.8): "risk" is renamed acute_stress - a 3-day mean tr_ratio<0.5
+# binary indicator, NOT interannual downside risk.
+PREFERENCE_KEYS = ["yield_proxy", "water", "cost", "acute_stress"]
 
 # Residual corrections applied to the base policy's depth, clipped into
 # [0, max(ACTIONS_MM)] afterwards. P0-5 (docs/审计修复计划.md): the old
@@ -73,10 +76,11 @@ def _sample_preference(rng):
 class RotationGymEnv(gym.Env):
     def __init__(self, mode="direct", sites=None, soils=None, years=None, seed=None,
                  annual_quota=ANNUAL_QUOTA_MM, base_policy=threshold_policy, fixed_site=None,
-                 water_norm="per_action"):
-        """water_norm (audit-v2 P0-9): passed through to the inner env -
-        see RotationIrrigationEnv.__init__; must match between training
-        and evaluation for the arm it belongs to.
+                 config=PRIMARY_CONFIG, safety_enabled=True):
+        """audit-v3 (2.1/3.7): `config` (RLExperimentConfig) drives the
+        inner env's gamma/shaping/water-normalizer - the old water_norm
+        string is gone. safety_enabled=False evaluates a raw
+        (unsafety-filtered) agent separately from agent+safety (3.7).
 
         fixed_site (P0-4, docs/审计修复计划.md): when set, every reset()
         uses this site instead of sampling from `sites`. Domain
@@ -96,7 +100,11 @@ class RotationGymEnv(gym.Env):
         self.soils = soils or list(STANDARD_SOILS)
         self.years = years or TRAIN_YEARS
         self.annual_quota = annual_quota
-        self.water_norm = water_norm
+        # audit-v3 (2.1/3.7): one config drives the inner env's reward;
+        # water_norm/safety_enabled are config-level knobs.
+        self.config = config
+        self.config.validate()
+        self.safety_enabled = safety_enabled
         self.base_policy = base_policy
         self._rng = random.Random(seed)
 
@@ -129,8 +137,10 @@ class RotationGymEnv(gym.Env):
         soil_key = self._rng.choice(self.soils)
         year = self._rng.choice(self.years)
         self.weights = _sample_preference(self._rng)
-        self.inner = RotationIrrigationEnv(site_id, soil_key, year, annual_quota=self.annual_quota,
-                                           water_norm=self.water_norm)
+        self.inner = RotationIrrigationEnv(
+            site_id, soil_key, year, annual_quota=self.annual_quota,
+            config=self.config, safety_enabled=self.safety_enabled,
+        )
         self._state = self.inner.reset()
         return self._encode(self._state), {}
 

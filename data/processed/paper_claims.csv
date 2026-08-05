@@ -1,0 +1,14 @@
+claim_key,paper,section,value,unit,value_note,source_file,regenerate_command,collected_at_utc
+paper2_water_saving_pct_direct,论文二,对比三,5.5% - 22.0%,%,per-site pct across 4 double-crop sites,data/processed/ppo_rotation_wq_comparison.csv,retrain + evaluate (re-run phase),2026-08-04T14:39+00:00
+paper2_yield_gap_direct,论文二,对比三,0.89 - 1.25 t/ha,t/ha,"rule minus RL, 4 double-crop sites",data/processed/ppo_rotation_wq_comparison.csv,retrain + evaluate (re-run phase),2026-08-04T14:39+00:00
+paper2_water_use_direct,论文二,对比三,212 - 320 mm,mm,4 double-crop sites,data/processed/ppo_rotation_wq_comparison.csv,retrain + evaluate (re-run phase),2026-08-04T14:39+00:00
+paper2_preference_water_range,论文二,对比三,108 - 435 mm,mm,across all 7 preferences x 5 sites,data/processed/ppo_rotation_wq_comparison.csv,retrain + evaluate (re-run phase),2026-08-04T14:39+00:00
+paper3_corr_two_factor,论文三,对比四,0.971,r,"95% CI [0.965, 1.000]",data/processed/two_factor_validation_report.csv,python scripts/validate_two_factor.py,2026-08-04T14:39+00:00
+paper3_corr_distance,论文三,对比四,0.702,r,"95% CI [0.395, 1.000]",data/processed/two_factor_validation_report.csv,python scripts/validate_two_factor.py,2026-08-04T14:39+00:00
+paper3_corr_diff_ci,论文三,对比四,0.269,r-diff,"95% CI [-0.012, 0.604]",data/processed/two_factor_validation_report.csv,python scripts/validate_two_factor.py,2026-08-04T14:39+00:00
+paper3_loo_ningxia_drop,论文三,对比四,0.635,r,two-factor corr with Ningxia dropped,data/processed/two_factor_leave_one_out.csv,python scripts/validate_two_factor.py,2026-08-04T14:39+00:00
+paper3_task_sensitivity_range,论文三,对比四,0.14 - 0.81,0-1,spread unavailable (pre-audit-v3-6.6 data),data/processed/task_sensitivity.csv,python src/transfer/task_sensitivity.py,2026-08-04T14:39+00:00
+paper3_transfer_gap_ningxia,论文三,对比四,4.78 t/ha,t/ha,mean over evaluation years,data/processed/leave_one_out_rotation_summary_wq.csv,python -m src.transfer.leave_one_out_rotation,2026-08-04T14:39+00:00
+paper1_alpha_optima,论文一,对比1b,"{'beijing_plain': 0.6, 'hebei_central': 0.5, 'henan_north': 0.5, 'shaanxi_guanzhong': 0.3}",alpha,"best fixed alpha per site (scan-derived, SMT-averaged)",data/processed/allocation_scan.csv,python src/sim/scan_allocation.py,2026-08-04T14:39+00:00
+paper1_algo_hv,论文一,对比3,"{'MOEA/D': 0.3698, 'NSGA-II': 0.936, 'NSGA-III': 0.9382}",hypervolume,"mean hypervolume across seeds, hebei_central",data/processed/algorithm_comparison_hebei_central_hv_summary.csv,python src/sim/optimize_algorithm_comparison.py,2026-08-04T14:39+00:00
+paper1_mwv_top_stage,论文一,对比4,MISSING,t/ha/mm,marginal_response_v2.csv not generated yet (re-run phase),data/processed/marginal_response_v2.csv,python src/sim/marginal_water_value_v2.py,2026-08-04T14:39+00:00

@@ -12,9 +12,12 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "rl"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "sim"))
 
 import matplotlib.pyplot as plt
 import pandas as pd
+from sim.temporal_split import SPLIT
 from style import PALETTE, SITE_LABELS_CN, SITE_ORDER, apply_style
 
 DATA_PATH = Path(__file__).resolve().parents[2] / "data" / "processed" / "ppo_rotation_wq_comparison.csv"
@@ -36,14 +39,19 @@ def main():
     df = df[df["preference"] == "balanced"]
     site_order_cn = [SITE_LABELS_CN[s] for s in SITE_ORDER]
 
+    test_years = list(SPLIT.final_test_years)
+    year_label = f"{test_years[0]}—{test_years[-1]}"
+
     fig, axes = plt.subplots(1, 4, figsize=(22, 6))
-    fig.suptitle("研究二 核心对比：残差RL vs 直接RL vs 两种规则基线（轮作环境，3个独立seed，2018—2022测试年）", fontsize=13, y=1.03)
+    fig.suptitle(f"研究二 核心对比：残差RL vs 直接RL vs 两种规则基线（轮作环境，3个独立seed，{year_label}测试年）", fontsize=13, y=1.03)
 
     metrics = [
         ("total_yield_t_ha", "(a) 系统总产量", "t/ha"),
         ("total_irrigation_mm", "(b) 总灌溉量", "mm"),
         ("discounted_return", "(c) 折扣回报 (gamma=0.995)", ""),
-        ("action_modified_rate", "(d) 安全层介入率", "比例"),
+        # audit-v3 (3.6): the intervention rate is the safety-rule rate
+        # only (quota clips / delivery shortfalls are separate columns).
+        ("safety_modified_rate", "(d) 安全层介入率", "比例"),
     ]
     for ax, (col, title, unit) in zip(axes, metrics):
         grouped = df.groupby(["site_id", "policy"])[col]

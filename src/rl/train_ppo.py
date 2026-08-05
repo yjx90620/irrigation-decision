@@ -37,6 +37,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "data"))
 
+# audit-v3 (8): legacy data scripts must refuse to run without an explicit
+# --allow-legacy - their outputs are invalid for paper claims and a
+# reviewer running them by accident must not silently produce legacy-era
+# artifacts that look current.
+if __name__ == "__main__" and "--allow-legacy" not in sys.argv:
+    raise SystemExit(
+        "train_ppo.py is a DEPRECATED single-season prototype (audit-v2 P0-12); its outputs "
+        "are invalid for paper claims. Pass --allow-legacy to run it for development record only."
+    )
+
 from config import SITES
 from soils import STANDARD_SOILS
 from train_utils import train_policy

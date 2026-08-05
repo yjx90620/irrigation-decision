@@ -58,20 +58,40 @@ from pymoo.termination import get_termination
 from rotation import run_rotation_series
 
 ANNUAL_QUOTA_MM = 450.0  # total irrigation available per rotation year
-EVAL_YEARS = [2016, 2017, 2018, 2019, 2020]
+# audit-v3 (5.1): cross-season optimization evaluates on the validation
+# window; the chosen strategy is then evaluated ONCE on final-test years
+# by the comparison pipeline.
+from temporal_split import SPLIT
 
-# site's own best fixed alpha from scan_allocation.py's completed scan
-# (data/processed/allocation_scan.csv, best mean_total_yield across SMT
-# levels) - the 对比1b control, replacing the arbitrary alpha=0.5 strawman.
+EVAL_YEARS = list(SPLIT.validation_years)
+
+# site's own best fixed alpha - audit-v3 (7.1): the SINGLE source is
+# data/processed/best_fixed_alpha.csv, derived by scan_allocation.py from
+# its completed scan (alpha maximizing mean yield averaged over the SMT
+# dimension) and written by the scan itself. This dict is only a fallback
+# for a checkout without the scan output; it is NOT the authority and any
+# drift between it and the CSV is a bug.
 # Regenerated after the P0-1/P0-2 fixes (docs/审计修复计划.md) - hebei_central
 # shifted from 0.7 to 0.5 (a real consequence of the corrected calendar/
 # quota mechanics, not noise); the others are unchanged from the pre-fix
 # scan's values.
-BEST_FIXED_ALPHA = {
+LEGACY_BEST_FIXED_ALPHA = {
     "hebei_central": 0.5, "henan_north": 0.8, "shaanxi_guanzhong": 0.3, "beijing_plain": 0.7,
 }
 
 OUT_DIR = Path(__file__).resolve().parents[2] / "data" / "processed"
+
+
+def best_fixed_alpha(site_id: str) -> float:
+    """Read the site's best fixed alpha from best_fixed_alpha.csv (the
+    single source, written by scan_allocation.py); fall back to the legacy
+    dict only if the file is missing."""
+    path = OUT_DIR / "best_fixed_alpha.csv"
+    if path.exists():
+        df = pd.read_csv(path).set_index("site_id")
+        if site_id in df.index:
+            return float(df.loc[site_id, "best_fixed_alpha"])
+    return LEGACY_BEST_FIXED_ALPHA[site_id]
 
 
 def evaluate_policy(site_id, soil_key, smt_wheat, smt_maize, alpha):
@@ -160,7 +180,7 @@ if __name__ == "__main__":
         print(f"=== {args.site} / {args.soil} / {mode} ===")
         if mode == "fixed_best":
             frames.append(run(
-                args.site, args.soil, joint=False, fixed_alpha=BEST_FIXED_ALPHA[args.site],
+                args.site, args.soil, joint=False, fixed_alpha=best_fixed_alpha(args.site),
                 pop_size=args.pop_size, n_gen=args.n_gen, mode_label="fixed_best",
             ))
         else:

@@ -1,23 +1,41 @@
-"""Rotation-based irrigation decision environment: one episode covers a
-full winter wheat -> summer maize cycle under a shared annual water quota.
+"""Winter wheat -> summer maize rotation RL environment (audit-v2/v3).
 
-Replaces env.py's single-season maize setup, which turned out to have
-almost no irrigation signal (4 of 5 sites reached 93-99% of
-full-irrigation yield with zero irrigation - see docs/系统升级方案.md).
-Under the rotation the agent faces a real cross-season tradeoff: water
-spent on wheat both produces wheat yield *and* depletes the profile the
-following maize inherits, and both draw on one annual quota.
+Wraps AquaCropModel for day-by-day external control (irrigation_method=5),
+annual 450mm hard quota, rule-based safety layer, preference-conditioned
+4-term reward.
 
-Each season is stepped day-by-day through AquaCrop's irrigation_method=5
-(constant depth, re-read every simulated day), then the wheat season's
-final soil profile is handed to the maize season - the same chaining
-rotation.py uses for the non-RL simulations, so RL and optimization
-results stay comparable.
+audit-v3 (round 3, pre-submission) changes in this file:
+- 2.1: every reward/shaping/water-normalization knob comes from a single
+  RLExperimentConfig (gamma, shaping_mode, water_normalizer) - the env no
+  longer hardcodes SHAPING_GAMMA; PPO and the shaping use the SAME gamma,
+  so a gamma ablation is single-factor.
+- 3.1: potential shaping is now strict PBRS: Phi(terminal)=0 (absorbing
+  state), NO crop-switch potential reset (the wheat->maize handoff is an
+  ordinary MDP transition), and the telescoping identity holds exactly.
+  shaping_mode="none" is the no-shaping ablation.
+- 3.2: the terminal yield bonus uses SYSTEM-level normalization
+  (sum of crop yields / sum of per-crop references) so double-crop and
+  single-crop episodes have comparable reward magnitude.
+- 3.3: wheat->maize handoff requires gap >= 1 day (MIN_HANDOFF_GAP_DAYS).
+- 3.4: days_to_harvest is computed from calendar dates
+  (harvest_window_end - current_model_date), not season_length - DAP, so
+  the fallow days between wheat harvest and maize planting no longer push
+  the late-season safety filter later.
+- 3.5: emergency_shortfall_mm is computed from the ACTUAL applied
+  irrigation (irr_cum delta), not the requested depth.
+- 3.6: action modification reasons are split
+  (safety_modified / quota_clipped / delivery_shortfall + per-rule flags);
+  the paper's intervention rate must use safety_modified, not a mixed flag.
+- 3.7: safety_enabled=False lets a raw (unsafety-filtered) agent be
+  evaluated separately from agent+safety.
+- 3.8: the "risk" reward term is renamed acute_stress (a 3-day mean
+  tr_ratio<0.5 binary indicator) - it is NOT interannual downside risk.
 """
 
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "data"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "sim"))
 
@@ -26,75 +44,48 @@ import pandas as pd
 from aquacrop import AquaCropModel, InitialWaterContent, IrrigationManagement
 
 from cropping_systems import (
-    MAIZE_HARVEST, MAIZE_PLANTING, SPRING_MAIZE_HARVEST, SPRING_MAIZE_PLANTING,
-    WHEAT_HARVEST, WHEAT_PLANTING, build_crop, is_double_crop,
+    MAIZE_HARVEST, MAIZE_PLANTING, MIN_HANDOFF_GAP_DAYS, SPRING_MAIZE_HARVEST,
+    SPRING_MAIZE_PLANTING, WHEAT_HARVEST, WHEAT_PLANTING, build_crop, is_double_crop,
 )
+from experiment_config import PRIMARY_CONFIG, RLExperimentConfig
 from rotation import RotationCalendarError, _wc_from_profile
 from soil_moisture_init import initial_water_content as observed_initial_wc
 from soils import get_soil
 from weather import load_site_weather
 
-ACTIONS_MM = [0, 10, 20, 30, 40]
-DECISION_INTERVAL_DAYS = 3
 ANNUAL_QUOTA_MM = 450.0
+DECISION_INTERVAL_DAYS = 3
+ACTIONS_MM = [0.0, 10.0, 20.0, 30.0, 40.0]
+MAX_ACTION_MM = max(ACTIONS_MM)
 
-COST_WATER = 1.0
-COST_START = 5.0
-
-# P0-4 (docs/审计修复计划.md): the old reward added mean_stress every
-# single step (~120 accumulations across a double-crop episode) but only
-# added the actual yield outcome once or twice, so a policy optimizing
-# this reward was mostly optimizing accumulated stress-proxy, not yield.
-# Potential-based shaping (Ng, Harada & Russell 1999): F(s,a,s') = gamma *
-# Phi(s') - Phi(s) for any potential function Phi provably does not change
-# which policy is optimal, and telescopes to Phi(terminal) - Phi(initial)
-# over a full episode regardless of how many steps it took - so this
-# structurally fixes the "reward scales with episode length" problem
-# instead of just picking a small coefficient and hoping it's small
-# enough. Phi = tr_ratio (transpiration ratio, already in state, bounded
-# [0,1]) is a reasonable stand-in for "how well-watered is the crop right
-# now". SHAPING_GAMMA matches PPO's own discount (train_rotation_compare.py
-# uses gamma=0.995) - the invariance proof requires the same gamma the
-# policy is actually optimized under.
-SHAPING_GAMMA = 0.995
-
-# Safety layer thresholds (研究方案 5.8), same intent as env.py's
+# Safety layer thresholds (研究方案 5.8)
 SATURATION_DEPLETION_FRAC = 0.1
 HEAVY_RAIN_MM_3D = 20.0
 LATE_SEASON_DAYS_TO_HARVEST = 7
 
-# Soft floor: originally added after training hung for 20+ hours with
-# zero checkpoints, as a workaround for what turned out to be a genuine
-# unbounded loop in aquacrop-ospy's calculate_HIGC() (severe water stress
-# can collapse a crop's calendar into a state where that function never
-# converges - see docs/aquacrop_patches.md). That's now fixed at the
-# actual root (patches/patch_aquacrop_higc.py), so this floor no longer
-# needs to - and per P0-2 (docs/审计修复计划.md) must not - bypass the
-# annual quota to do its job. It's now a *preference* applied only within
-# whatever quota remains: step() clamps to remaining_quota unconditionally,
-# so a depleted quota near season end can still leave the crop under
-# critical stress (recorded as an emergency shortfall, not hidden).
+# audit-v3 (3.3): the wheat->maize calendar handoff must leave at least
+# one full day of gap - a same-day handoff would hand maize a soil state
+# from a day wheat itself hadn't finished yet.
+MIN_HANDOFF_GAP_DAYS = 1
+
 CRITICAL_DEPLETION_FRAC = 0.85
 CRITICAL_DEPLETION_MIN_MM = 20.0
 
-# Yield normalization per crop, so seasons contribute comparably to reward
-# despite maize out-yielding wheat. Values are near the top of what each
-# system produces under generous irrigation. Measured with the audit-v2
-# cultivar fixes (P0-2): wheat ~6.5-7, double-crop summer maize now
-# ~10.3-11.6 (the old 9.0 reference came from the truncated 132-day stock
-# cultivar, which never reached maturity inside the 112-day window),
-# Ningxia spring maize ~13.5-14.8.
+# audit-v3 (3.8): cost model - water resource penalty lives in the
+# "water" term; "cost" covers water-fee + per-event startup (documented
+# overlap, reported in the paper; see 3.9 方案A).
+COST_WATER = 0.1  # CNY per mm
+COST_START = 0.5  # CNY per irrigation event start
+
+# Yield normalization per crop (near the top of what each system produces
+# under generous irrigation; audit-v2 P0-2 cultivar-fixed measurements).
 YIELD_REFERENCE = {"wheat": 7.0, "maize": 11.5, "spring_maize": 14.5}
 
 
 def safety_filter(action_mm, state, days_to_harvest, remaining_quota):
     """Returns (filtered_mm, triggered_rules). filtered_mm is NOT yet
-    clamped to remaining_quota - callers (RotationIrrigationEnv.step())
-    must do `applied = min(filtered_mm, max(remaining_quota, 0.0))`
-    themselves and are responsible for the quota being an actual hard cap
-    (P0-2, docs/审计修复计划.md). This function no longer clamps to quota
-    itself so that "the safety filter wanted X mm but quota only allowed Y"
-    is an observable distinction, not silently merged into one number."""
+    clamped to remaining_quota - step() applies the hard cap itself, so
+    "safety wanted X but quota allowed Y" stays an observable distinction."""
     adjusted = action_mm
     triggered = []
     if adjusted > 0 and state["depletion_frac"] < SATURATION_DEPLETION_FRAC:
@@ -107,44 +98,34 @@ def safety_filter(action_mm, state, days_to_harvest, remaining_quota):
         adjusted = 0.0
         triggered.append("late_season")
 
-    # Critical-depletion floor: a *preference* for more water when the
-    # crop is under severe stress, applied within whatever quota is left
-    # (never bypasses it - see CRITICAL_DEPLETION_FRAC's comment). Still
-    # overrides the agronomic rules above (saturation/rain/late-season),
-    # since "severely water-stressed" trumps those heuristics regardless
-    # of quota.
+    # Critical-depletion floor: a preference within whatever quota is left
+    # (never bypasses it - step() clamps unconditionally).
     if state["depletion_frac"] >= CRITICAL_DEPLETION_FRAC:
         if adjusted < CRITICAL_DEPLETION_MIN_MM:
             triggered.append("critical_depletion")
         adjusted = max(adjusted, CRITICAL_DEPLETION_MIN_MM)
 
+    # Round tiny residuals to avoid spuriously flagged modifications.
+    adjusted = float(np.round(adjusted, 3))
     return adjusted, triggered
 
 
 class RotationIrrigationEnv:
-    def __init__(self, site_id, soil_key, year, annual_quota=ANNUAL_QUOTA_MM, water_norm="per_action"):
-        """water_norm (audit-v2 P0-9): the per-step water/cost penalty's
-        normalizer. "per_action" (= max(ACTIONS_MM), the historical default)
-        makes the water signal dominate the return ~10:1 over the terminal
-        yield bonus (measured: -3.15 vs +0.32 on hebei 2019), driving the
-        policy to minimize water at the expense of yield. "per_quota"
-        (=/annual_quota) shrinks the per-step penalty ~11x so yield and
-        water balance at ~1.7:1 - the audit's suggested renormalization.
-        The reward scale is an experiment axis; it must be consistent
-        between an arm's training and its evaluation."""
+    def __init__(self, site_id, soil_key, year, annual_quota=ANNUAL_QUOTA_MM,
+                 config: RLExperimentConfig = PRIMARY_CONFIG, safety_enabled: bool = True):
+        """audit-v3 (2.1/3.7): all reward knobs come from `config`; the
+        safety layer can be disabled for the raw-agent evaluation (3.7)."""
         self.site_id = site_id
         self.soil_key = soil_key
         self.year = year
         self.annual_quota = annual_quota
-        self.water_norm = water_norm
+        self.config = config
+        self.config.validate()
+        self.safety_enabled = safety_enabled
         self._weather = load_site_weather(site_id)
 
     # --- season plumbing -------------------------------------------------
     def _start_season(self, crop_name, sim_start, sim_end, initial_wc, off_season=False):
-        # P0-2 (audit-v2): crops are built by cropping_systems.build_crop(),
-        # the single place that knows each site's cultivar - the old inline
-        # Crop("WheatGDD"/"Maize") construction here is how the wrong
-        # 132-day stock maize slipped into the 112-day summer window.
         crop = build_crop(self.site_id, crop_name)
         model = AquaCropModel(
             sim_start_time=sim_start,
@@ -159,17 +140,25 @@ class RotationIrrigationEnv:
         model._initialize()
         self.model = model
         self.current_crop = crop_name
-        planting = pd.Timestamp(sim_start.replace("/", "-"))
-        self.season_days = (pd.Timestamp(sim_end.replace("/", "-")) - planting).days
+        # audit-v3 (3.4): track the crop's ACTUAL planting date (the window
+        # may start before it, e.g. maize's fallow bridge) and the fixed
+        # harvest-window end; days_to_harvest is derived from calendar
+        # dates, never from season_length - DAP (which would count the
+        # fallow gap as crop days and delay the late-season filter).
+        if crop_name == "wheat":
+            self.crop_planting_date = pd.Timestamp(f"{self.year - 1}-{WHEAT_PLANTING.replace('/', '-')}")
+        elif crop_name == "spring_maize":
+            self.crop_planting_date = pd.Timestamp(f"{self.year}-{SPRING_MAIZE_PLANTING.replace('/', '-')}")
+        else:
+            self.crop_planting_date = pd.Timestamp(f"{self.year}-{MAIZE_PLANTING.replace('/', '-')}")
+        self.harvest_window_end_date = pd.Timestamp(sim_end.replace("/", "-"))
+        self.season_days = (self.harvest_window_end_date - self.crop_planting_date).days
 
     def _advance_to_planting(self):
         """P0-1 (audit-v2): fast-forward an off-season window from its
-        start (the day after wheat's actual harvest) to the maize planting
-        day, simulating the fallow days' bare-soil water balance with zero
-        irrigation. The policy only decides from planting onward - the
-        fallow itself is not a decision period, but its effect on the
-        profile maize inherits IS simulated (previously skipped entirely)."""
-        planting = pd.Timestamp(f"{self.year}-{MAIZE_PLANTING.replace('/', '-')}")
+        start (day after wheat's actual harvest) to the maize planting day,
+        simulating fallow bare-soil water balance with zero irrigation."""
+        planting = self.crop_planting_date
         self.model._param_struct.IrrMngt.depth = 0
         while pd.Timestamp(self.model._clock_struct.step_start_time) < planting:
             if self.model._clock_struct.model_is_finished:
@@ -199,9 +188,10 @@ class RotationIrrigationEnv:
         self.last_irr_mm = 0.0
         self.done = False
         self.season_results = {}
-        self._pending_yield_bonus = 0.0
         self._last_state = self._get_state()
-        self._potential = self._last_state["tr_ratio"]
+        # audit-v3 (3.1): PBRS potential starts at the initial state's
+        # potential; Phi(terminal)=0, no resets anywhere in between.
+        self._potential = float(self.model._init_cond.tr_ratio)
         return self._last_state
 
     # --- observation -----------------------------------------------------
@@ -255,42 +245,47 @@ class RotationIrrigationEnv:
         return self.model._init_cond.th
 
     def _check_wheat_maize_handoff(self):
-        # P0-1 date-order check (docs/审计修复计划.md), mirrors
-        # rotation.py's run_rotation_year - wheat's actual GDD-driven
-        # harvest must precede maize's fixed planting date, or maize would
-        # start from a soil-moisture state that hasn't happened yet in its
-        # own simulated timeline.
+        """audit-v3 (3.3): maize planting must be >= MIN_HANDOFF_GAP_DAYS
+        after wheat's actual harvest - equal dates are rejected."""
         maize_planting_date = pd.Timestamp(f"{self.year}-{MAIZE_PLANTING.replace('/', '-')}")
         wheat_harvest_date = pd.Timestamp(self.season_results["wheat"]["harvest_date"])
         gap_days = (maize_planting_date - wheat_harvest_date).days
-        if gap_days < 0:
+        if gap_days < MIN_HANDOFF_GAP_DAYS:
             raise RotationCalendarError(
-                f"{self.site_id} {self.year}: wheat harvested {wheat_harvest_date.date()}, on/after maize's "
-                f"fixed planting date {maize_planting_date.date()} ({-gap_days} day(s) late) - recalibrate "
-                f"wheat_params_for('{self.site_id}') in cropping_systems.py"
+                f"{self.site_id} {self.year}: wheat harvested {wheat_harvest_date.date()}, maize plants "
+                f"{maize_planting_date.date()} - handoff gap {gap_days} day(s) < "
+                f"{MIN_HANDOFF_GAP_DAYS} (recalibrate wheat_params_for('{self.site_id}'))"
             )
+
+    def _water_denominator(self) -> float:
+        if self.config.water_normalizer == "annual_quota":
+            # guard a degenerate zero-quota setup (used by tests) so the
+            # reward never divides by zero
+            return max(self.annual_quota, 1e-6)
+        return MAX_ACTION_MM
 
     def step(self, action_mm):
         assert not self.done, "call reset() before stepping a finished episode"
         remaining_quota = self.annual_quota - self.quota_used
-        days_to_harvest = self.season_days - self._last_state["dap"]
-        filtered_mm, triggered_rules = safety_filter(action_mm, self._last_state, days_to_harvest, remaining_quota)
-        # P0-2 (docs/审计修复计划.md): the annual quota is a hard cap,
-        # unconditionally - nothing (including the critical-depletion
-        # floor above) may push actual model irrigation past what's left.
+        # audit-v3 (3.4): calendar-based days to harvest - the fallow days
+        # between wheat harvest and maize planting must NOT shift the
+        # late-season safety filter.
+        current_date = pd.Timestamp(self.model._clock_struct.step_start_time)
+        days_to_harvest = max(0, (self.harvest_window_end_date - current_date).days)
+
+        if self.safety_enabled:
+            filtered_mm, triggered_rules = safety_filter(
+                action_mm, self._last_state, days_to_harvest, remaining_quota
+            )
+        else:
+            # audit-v3 (3.7): raw-agent evaluation - no safety filtering.
+            filtered_mm, triggered_rules = float(action_mm), []
+        # annual quota is a hard cap, unconditionally
         applied = min(filtered_mm, max(remaining_quota, 0.0))
-        emergency_shortfall_mm = (
-            max(0.0, CRITICAL_DEPLETION_MIN_MM - applied) if "critical_depletion" in triggered_rules else 0.0
-        )
 
         self.model._param_struct.IrrMngt.depth = applied
-        # P0-3 (audit-v2): AquaCrop applies at most what the soil profile
-        # can actually hold on the decision day - requesting 40mm delivered
-        # a constant 25mm across every step (measured) - so quota and the
-        # water/cost rewards must account for the ACTUAL applied amount
-        # (irr_cum delta), not the requested depth, or training over-counts
-        # water use by ~60% and the quota narrative describes a water
-        # volume that was never applied.
+        # P0-3 (audit-v2): account for ACTUAL applied (irr_cum delta), not
+        # the requested depth.
         irr_before = float(self.model._init_cond.irr_cum)
         self.model.run_model(num_steps=1, initialize_model=False)
         actual_applied = max(0.0, float(self.model._init_cond.irr_cum) - irr_before)
@@ -304,60 +299,37 @@ class RotationIrrigationEnv:
 
         self.quota_used += actual_applied
         assert self.quota_used <= self.annual_quota + 1e-6, (
-            f"quota_used {self.quota_used} exceeded annual_quota {self.annual_quota} - P0-2 hard-cap violated"
+            f"quota_used {self.quota_used} exceeded annual_quota {self.annual_quota} - hard-cap violated"
         )
         if actual_applied > 0:
             self.days_since_last_irr, self.last_irr_mm = 0, actual_applied
         else:
             self.days_since_last_irr += DECISION_INTERVAL_DAYS
 
-        mean_stress = float(np.mean(stress))  # kept only for the risk indicator below
-        new_potential = float(self.model._init_cond.tr_ratio)
-        shaping_reward = SHAPING_GAMMA * new_potential - self._potential
-        self._potential = new_potential
-        # audit-v2 P0-9: water_norm scales the per-step water/cost penalty
-        # (see __init__ docstring) - "per_quota" rebalances it against the
-        # terminal yield bonus instead of letting it dominate ~10:1.
-        water_denom = self.annual_quota if self.water_norm == "per_quota" else max(ACTIONS_MM)
-        reward = {
-            "yield_proxy": shaping_reward,
-            "water": -actual_applied / water_denom,
-            "cost": -(COST_WATER * actual_applied + COST_START * (actual_applied > 0))
-            / (COST_WATER * water_denom + COST_START),
-            "risk": -1.0 if mean_stress < 0.5 else 0.0,
-        }
-        info = {
-            "raw_action_mm": action_mm,
-            "filtered_action_mm": filtered_mm,
-            # P0-3 (audit-v2): the model-truth applied amount (irr_cum
-            # delta), which is what quota/rewards now account for.
-            "actual_model_irrigation_mm": actual_applied,
-            "applied_mm": applied,  # requested-after-safety-filter, kept for backward compatibility
-            "action_modified": actual_applied != action_mm,
-            "safety_rule_triggered": ",".join(triggered_rules) if triggered_rules else "",
-            "quota_used_mm": self.quota_used,
-            "quota_violation_mm": max(0.0, self.quota_used - self.annual_quota),
-            "emergency_shortfall_mm": emergency_shortfall_mm,
-            "crop": self.current_crop,
-        }
+        # audit-v3 (3.5): emergency shortfall is based on the ACTUAL
+        # delivered irrigation, not the requested/clipped depth.
+        emergency_shortfall_mm = (
+            max(0.0, CRITICAL_DEPLETION_MIN_MM - actual_applied)
+            if "critical_depletion" in triggered_rules else 0.0
+        )
 
+        # season/switch handling must complete BEFORE the shaping term so
+        # phi_next reflects the true next state (or the absorbing terminal
+        # state) - audit-v3 (3.1).
+        yield_bonus = 0.0
         if self.model._clock_struct.model_is_finished:
             th_end = self._finish_season()
             crop = self.current_crop
-            # P0-4 (docs/审计修复计划.md): yield is banked here, not added
-            # to reward yet - paid out as a single system-level terminal
-            # reward when the whole rotation year ends (see `self.done`
-            # branch below), not once per crop, so a double-crop episode
-            # doesn't get 2x the terminal signal a single-crop one gets.
-            self._pending_yield_bonus += self.season_results[crop]["dry_yield_t_ha"] / YIELD_REFERENCE[crop]
-
+            # audit-v3 (3.2 FIX): the yield signal is paid when the crop is
+            # harvested - per-crop yield/reference with the discount factor
+            # of THAT step - not lumped once at episode end (where gamma^T
+            # halves it and the per-step water penalty dominates, collapsing
+            # the policy into water-minimization; see the retrain learning
+            # curves). The PBRS shaping is untouched: Phi(terminal)=0 still
+            # holds and the bonus is a separate non-shaping reward term.
+            yield_bonus = self.season_results[crop]["dry_yield_t_ha"] / YIELD_REFERENCE[crop]
             if crop == "wheat":
                 self._check_wheat_maize_handoff()
-                # P0-1 (audit-v2): hand the depleted profile to maize via an
-                # off-season window starting the day after wheat's ACTUAL
-                # harvest - the fallow days before maize planting (up to a
-                # month of rain/ET, previously skipped) are simulated by
-                # _advance_to_planting before the policy takes over.
                 wheat_harvest = pd.Timestamp(self.season_results["wheat"]["harvest_date"])
                 maize_start = (wheat_harvest + pd.Timedelta(days=1)).strftime("%Y/%m/%d")
                 self._start_season(
@@ -366,20 +338,70 @@ class RotationIrrigationEnv:
                 )
                 self._advance_to_planting()
                 self.days_since_last_irr, self.last_irr_mm = 99, 0.0
-                # reset the shaping potential's baseline at the crop switch -
-                # otherwise the first maize step's shaping term would jump
-                # purely because maize's tr_ratio dynamics start from a
-                # different baseline than wheat's, not because of anything
-                # the policy did.
-                self._potential = float(self.model._init_cond.tr_ratio)
             else:
-                # end of the last (or only) season of the cycle
                 self.done = True
-                reward["yield_proxy"] += self._pending_yield_bonus
-                for name, res in self.season_results.items():
-                    info[name] = res
-                info["total_yield_t_ha"] = sum(v["dry_yield_t_ha"] for v in self.season_results.values())
-                info["total_irrigation_mm"] = sum(v["irrigation_mm"] for v in self.season_results.values())
+
+        # audit-v3 (3.1): strict PBRS - Phi(terminal)=0 (absorbing state),
+        # no potential resets anywhere, gamma from the shared config.
+        if self.config.shaping_mode == "potential":
+            phi_next = 0.0 if self.done else float(self.model._init_cond.tr_ratio)
+            shaping_reward = self.config.gamma * phi_next - self._potential
+            self._potential = phi_next
+        else:
+            shaping_reward = 0.0
+
+        mean_stress = float(np.mean(stress))
+        water_denom = self._water_denominator()
+        reward = {
+            # yield_proxy = strict-PBRS shaping (telescopes to a constant,
+            # zero policy gradient) + the per-harvest yield bonus (the
+            # actual yield signal).
+            "yield_proxy": shaping_reward + yield_bonus,
+            "water": -actual_applied / water_denom,
+            "cost": -(COST_WATER * actual_applied + COST_START * (actual_applied > 0))
+            / (COST_WATER * water_denom + COST_START),
+            # audit-v3 (3.8): acute-stress indicator, NOT interannual risk
+            "acute_stress": -1.0 if mean_stress < 0.5 else 0.0,
+        }
+
+        # audit-v3 (3.6): split the action-modification reasons.
+        tolerance = 1e-6
+        safety_modified = not np.isclose(filtered_mm, float(action_mm), atol=tolerance)
+        quota_clipped = not np.isclose(applied, filtered_mm, atol=tolerance)
+        delivery_shortfall_mm = max(0.0, applied - actual_applied)
+        delivery_modified = delivery_shortfall_mm > tolerance
+        any_modified = safety_modified or quota_clipped or delivery_modified
+        rule_flags = {r: (r in triggered_rules) for r in
+                      ("saturation", "heavy_rain_forecast", "late_season", "critical_depletion")}
+
+        info = {
+            "raw_action_mm": float(action_mm),
+            "filtered_action_mm": filtered_mm,
+            "actual_model_irrigation_mm": actual_applied,
+            "applied_mm": applied,
+            "action_modified": any_modified,  # deprecated aggregate; use the split fields
+            "safety_modified": safety_modified,
+            "quota_clipped": quota_clipped,
+            "delivery_shortfall_mm": delivery_shortfall_mm,
+            "delivery_modified": delivery_modified,
+            **{f"modified_by_{r}": v for r, v in rule_flags.items()},
+            "modified_by_quota": quota_clipped,
+            "safety_rule_triggered": ",".join(triggered_rules) if triggered_rules else "",
+            "quota_used_mm": self.quota_used,
+            "quota_violation_mm": max(0.0, self.quota_used - self.annual_quota),
+            "emergency_shortfall_mm": emergency_shortfall_mm,
+            "crop": self.current_crop,
+        }
+
+        if self.done:
+            # audit-v3 (3.2): per-harvest bonuses already paid the yield
+            # signal; this block only reports the system-level aggregates.
+            system_yield = sum(v["dry_yield_t_ha"] for v in self.season_results.values())
+            info["total_yield_t_ha"] = system_yield
+            info["total_irrigation_mm"] = sum(v["irrigation_mm"] for v in self.season_results.values())
+
+        for name, res in self.season_results.items():
+            info[name] = res
 
         state = self._get_state()
         self._last_state = state
@@ -399,15 +421,9 @@ def threshold_policy(state, weights=None, threshold=0.4, depth=20.0):
 def quota_reserving_policy(
     state, weights=None, threshold=0.4, depth=20.0, wheat_reserve_frac=0.6, annual_quota=ANNUAL_QUOTA_MM,
 ):
-    """P0-5 (docs/审计修复计划.md): a stronger baseline than threshold_policy
-    - same depletion-threshold trigger, but wheat additionally stops
-    irrigating once it has used more than `wheat_reserve_frac` of the
-    *annual* quota, reserving the rest for maize instead of burning the
-    whole budget on wheat and leaving maize nothing (the specific failure
-    mode threshold_policy has - see this module's evaluate() results).
-    Comparing RL against only the weaker threshold_policy risks crediting
-    RL for beating a strawman rather than a rule that already encodes the
-    obvious fix."""
+    """P0-5: stronger baseline - same trigger, but wheat stops once it has
+    used more than wheat_reserve_frac of the annual quota, reserving the
+    rest for maize."""
     if state["depletion_frac"] <= threshold:
         return 0.0
     if state["is_wheat"] and state["remaining_annual_quota"] <= (1 - wheat_reserve_frac) * annual_quota:

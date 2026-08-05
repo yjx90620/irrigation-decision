@@ -14,14 +14,23 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from scipy.cluster.hierarchy import dendrogram, linkage
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from style import SITE_LABELS_CN, SITE_ORDER, apply_style, site_color
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "processed"
 OUT_PATH = Path(__file__).resolve().parents[2] / "figures" / "fig3_environmental_fingerprint.png"
 
-RADAR_FEATURES = ["P_mm", "ET0_mm", "aridity_index", "CV_P", "max_dry_spell_days", "hot_days", "GDD"]
-RADAR_LABELS_CN = ["生育期降水", "生育期ET0", "干旱指数", "降水变异", "最长无雨天", "高温日数", "有效积温"]
+# audit-v3 (6.5): the fingerprint schema is now cool/warm season + crop-
+# stage blocks (see src/transfer/fingerprint.py); the old single-season
+# names (max_dry_spell_days/hot_days/GDD) no longer exist. The radar keeps
+# one interpretable feature per axis, taken from the real unified schema:
+# annual water balance + warm-season (maize window) stress descriptors.
+RADAR_FEATURES = [
+    "P_mm", "ET0_mm", "aridity_index", "CV_P", "PCI",
+    "warm_season_dry_spell_days", "warm_season_hot_days", "warm_season_gdd",
+]
+RADAR_LABELS_CN = ["年降水", "年ET0", "干旱指数", "降水变异", "降水集中度", "玉米季最长无雨天", "玉米季高温日数", "玉米季有效积温"]
 
 
 def main():
@@ -65,14 +74,18 @@ def main():
     ax.set_ylabel("距离")
 
     ax = fig.add_subplot(gs[1, 1])
+    # same features/distance machinery as similarity_analysis.py - report
+    # the ACTUAL explained variance instead of a hardcoded figure
+    pca_fit = PCA(n_components=2).fit(StandardScaler().fit_transform(fp[RADAR_FEATURES]))
+    evr = pca_fit.explained_variance_ratio_
     for site_id in SITE_ORDER:
         ax.scatter(pca.loc[site_id, "PC1"], pca.loc[site_id, "PC2"], s=160, color=site_color(site_id), zorder=3)
         ax.annotate(SITE_LABELS_CN[site_id], (pca.loc[site_id, "PC1"], pca.loc[site_id, "PC2"]), textcoords="offset points", xytext=(8, 8), fontsize=10)
     ax.axhline(0, color="gray", linewidth=0.8)
     ax.axvline(0, color="gray", linewidth=0.8)
-    ax.set_xlabel("PC1（主要对应干旱程度）")
-    ax.set_ylabel("PC2")
-    ax.set_title("(d) 主成分分析（PC1+PC2 解释 96.7% 方差）")
+    ax.set_xlabel(f"PC1（解释 {evr[0]*100:.1f}% 方差）")
+    ax.set_ylabel(f"PC2（解释 {evr[1]*100:.1f}% 方差）")
+    ax.set_title(f"(d) 主成分分析（PC1+PC2 解释 {(evr[0]+evr[1])*100:.1f}% 方差）")
 
     plt.tight_layout()
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)

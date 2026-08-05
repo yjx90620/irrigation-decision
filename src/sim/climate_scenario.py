@@ -91,21 +91,39 @@ def _load_period(site_id: str, period: str) -> pd.DataFrame:
 
 
 def _per_model_monthly_means(df: pd.DataFrame, variable: str) -> dict:
-    """{model_name: monthly-mean Series}, models with no data for this
-    site/variable excluded rather than poisoning anything with NaN."""
+    """{model_name: monthly-mean Series}. audit-v3 (4.2): a model enters
+    only when its column is COMPLETE over the full period (every row,
+    non-null, finite) - a 95%-coverage or empty column is excluded
+    SYMMETRICALLY in both periods, never one-sided."""
+    expected_rows = len(df)
     out = {}
     for model in MODELS:
         col = f"{variable}_{model}"
-        if col in df.columns and df[col].notna().any():
+        if col in df.columns and _is_complete_column(df[col], expected_rows):
             out[model] = df.groupby(df["month"])[col].mean()
     return out
 
 
+def _is_complete_column(series: pd.Series, expected_rows: int) -> bool:
+    import numpy as np
+
+    try:
+        values = pd.to_numeric(series, errors="coerce").to_numpy(dtype=float)
+    except (TypeError, ValueError):
+        return False
+    return (
+        len(series) == expected_rows
+        and series.notna().all()
+        and np.isfinite(values).all()
+    )
+
+
 def _ensemble_delta(hist: pd.DataFrame, fut: pd.DataFrame, variable: str, mode: str) -> tuple:
     """Per-model delta/ratio first, then averaged across models (P1-2a) -
-    restricted to models with usable data in *both* periods. Returns
-    (ensemble_mean, ensemble_std, n_models) - std so model disagreement
-    stays visible instead of only ever reporting the mean."""
+    restricted to models COMPLETE in *both* periods. Returns
+    (ensemble_mean, ensemble_std, n_models, clip_fraction). audit-v3
+    (4.4): the ratio clip range and its trigger fraction are reported,
+    and near-zero denominators are never silently filled with 1."""
     hist_by_model = _per_model_monthly_means(hist, variable)
     fut_by_model = _per_model_monthly_means(fut, variable)
     common = sorted(set(hist_by_model) & set(fut_by_model))
@@ -114,23 +132,31 @@ def _ensemble_delta(hist: pd.DataFrame, fut: pd.DataFrame, variable: str, mode: 
 
     if mode == "additive":
         per_model = pd.DataFrame({m: fut_by_model[m] - hist_by_model[m] for m in common})
+        clip_fraction = 0.0
     else:
-        # ratio, clipped: an ensemble ratio far outside this range in a dry/
-        # low month reflects a near-zero denominator rather than a credible signal
-        per_model = pd.DataFrame({
-            m: (fut_by_model[m] / hist_by_model[m].replace(0, np.nan)).clip(0.3, 3.0).fillna(1.0) for m in common
+        # ratio: values outside [0.3, 3.0] are treated as near-zero
+        # denominator artifacts; the fraction clipped is reported (4.4),
+        # and clipped/NaN entries fall back to the ensemble median of the
+        # UNCLIPPED months rather than a silent hard-coded 1.0.
+        raw = pd.DataFrame({
+            m: fut_by_model[m] / hist_by_model[m].replace(0, np.nan) for m in common
         })
-    return per_model.mean(axis=1), per_model.std(axis=1), len(common)
+        clipped_mask = raw.isna() | (raw < 0.3) | (raw > 3.0)
+        clip_fraction = float(clipped_mask.sum().sum() / max(1, raw.size))
+        fallback = raw.where(~clipped_mask).stack().median()
+        per_model = pd.DataFrame({m: raw[m].clip(0.3, 3.0).fillna(fallback) for m in common})
+    return per_model.mean(axis=1), per_model.std(axis=1), len(common), clip_fraction
 
 
 def compute_deltas(site_id: str) -> pd.DataFrame:
     hist, fut = _load_period(site_id, "historical"), _load_period(site_id, "future")
     deltas = pd.DataFrame(index=range(1, 13))
     for cmip6_var, out_name, mode in VARIABLES:
-        mean, std, n_models = _ensemble_delta(hist, fut, cmip6_var, mode)
+        mean, std, n_models, clip_fraction = _ensemble_delta(hist, fut, cmip6_var, mode)
         deltas[out_name] = mean
         deltas[f"{out_name}_std"] = std
         deltas.attrs[f"{out_name}_n_models"] = n_models
+        deltas.attrs[f"{out_name}_clip_fraction"] = clip_fraction
     return deltas
 
 

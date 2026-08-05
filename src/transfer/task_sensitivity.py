@@ -39,6 +39,7 @@ one timeout instead of the whole run silently vanishing.
 """
 
 import json
+import statistics
 import subprocess
 import sys
 from pathlib import Path
@@ -78,14 +79,16 @@ def full_irrigation():
     return IrrigationManagement(irrigation_method=1, SMT=[100, 100, 100, 100])
 
 
-def _run_policy(site_id: str, soil_key: str, policy: str) -> float:
-    """Mean annual system yield under `policy` ('rainfed' or 'full'). Runs
-    in-process - this is the single-combo body invoked as a fresh
-    subprocess by compute_sensitivity(), not called directly for a full
-    site from the parent."""
+def _run_policy(site_id: str, soil_key: str, policy: str) -> dict:
+    """Per-year system yields under `policy` ('rainfed' or 'full'), as
+    {year: yield_t_ha}. Runs in-process - this is the single-combo body
+    invoked as a fresh subprocess by compute_sensitivity(), not called
+    directly for a full site from the parent. Returning the full per-year
+    series (not just the mean) is what lets the parent quantify how
+    uncertain the sensitivity point estimate is (audit-v3 6.6)."""
     irr = rainfed if policy == "rainfed" else full_irrigation
     df = run_rotation_series(site_id, soil_key, EVAL_YEARS, irr, irr)
-    return df.groupby("year")["dry_yield_t_ha"].sum().mean()
+    return df.groupby("year")["dry_yield_t_ha"].sum().to_dict()
 
 
 def _run_policy_subprocess(site_id: str, soil_key: str, policy: str):
@@ -97,14 +100,15 @@ def _run_policy_subprocess(site_id: str, soil_key: str, policy: str):
         return None
     last_line = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else ""
     if result.returncode == 0 and last_line.startswith("{"):
-        return json.loads(last_line)["yield"]
+        payload = json.loads(last_line)
+        return {int(y): v for y, v in payload["yields"].items()}
     print(f"  {site_id} {policy}: FAILED (exit {result.returncode}): {result.stderr[-200:]}", flush=True)
     return None
 
 
 def compute_sensitivity(site_id: str, soil_key: str = "loam") -> dict:
-    rain_yield = _run_policy_subprocess(site_id, soil_key, "rainfed")
-    full_yield = _run_policy_subprocess(site_id, soil_key, "full")
+    rain_years = _run_policy_subprocess(site_id, soil_key, "rainfed")
+    full_years = _run_policy_subprocess(site_id, soil_key, "full")
 
     # P1 补充 (docs/审计修复计划.md): a legitimate rainfed_yield of exactly
     # 0.0 (complete crop failure under zero irrigation, plausible at the
@@ -112,23 +116,53 @@ def compute_sensitivity(site_id: str, soil_key: str = "loam") -> dict:
     # mark a real, computable, maximally-informative result (sensitivity
     # == 1.0) as missing. Check for None (subprocess failure/timeout)
     # explicitly instead of relying on truthiness.
+    def _mean(years):
+        return sum(years.values()) / len(years) if years else None
+
+    rain_mean, full_mean = _mean(rain_years), _mean(full_years)
     sensitivity = (
-        (full_yield - rain_yield) / full_yield
-        if (full_yield is not None and rain_yield is not None and full_yield > 0)
+        (full_mean - rain_mean) / full_mean
+        if (full_mean is not None and rain_mean is not None and full_mean > 0)
         else float("nan")
     )
-    print(f"  {site_id}: rainfed={rain_yield} full={full_yield} sensitivity={sensitivity}", flush=True)
+
+    # audit-v3 (6.6): the point estimate carries no uncertainty - report
+    # the across-year spread of the annual sensitivity
+    # (full_y - rain_y) / full_y so papers can quote sensitivity as
+    # mean +/- spread instead of a bare number. Years where full
+    # irrigation yields 0 (pathological) are dropped from the annual
+    # series.
+    annual = []
+    for year in rain_years:
+        if year not in full_years:
+            continue
+        full_y = full_years[year]
+        if full_y is None or full_y <= 0:
+            continue
+        annual.append((full_y - rain_years[year]) / full_y)
+    sensitivity_std = statistics.stdev(annual) if len(annual) >= 2 else float("nan")
+    sensitivity_min = min(annual) if annual else float("nan")
+    sensitivity_max = max(annual) if annual else float("nan")
+
+    print(
+        f"  {site_id}: rainfed={rain_mean} full={full_mean} sensitivity={sensitivity:.3f} "
+        f"across-year std={sensitivity_std:.3f}", flush=True
+    )
     return {
         "site_id": site_id, "soil": soil_key,
-        "rainfed_yield": rain_yield, "full_irrigation_yield": full_yield,
+        "rainfed_yield": rain_mean, "full_irrigation_yield": full_mean,
         "sensitivity": sensitivity,
+        "sensitivity_across_years_std": sensitivity_std,
+        "sensitivity_across_years_min": sensitivity_min,
+        "sensitivity_across_years_max": sensitivity_max,
+        "n_years": len(annual),
     }
 
 
 def main(site_id=None, soil_key="loam", policy=None):
     if policy is not None:
         # single-(site,policy) mode: print exactly one JSON line, nothing else
-        print(json.dumps({"yield": _run_policy(site_id, soil_key, policy)}))
+        print(json.dumps({"yields": _run_policy(site_id, soil_key, policy)}))
         return
 
     existing = pd.read_csv(OUT_PATH) if OUT_PATH.exists() else pd.DataFrame()

@@ -77,11 +77,31 @@ COMBO_TIMEOUT_S = 60  # generous vs the ~1-2s/combo normal case (which now
 ANNUAL_QUOTA_MM = 450.0
 ALPHAS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 SMT_LEVELS = {"conservative": [40] * 4, "moderate": [60] * 4, "aggressive": [80] * 4}
-YEARS = [2011, 2013, 2015, 2017, 2018, 2020]
+# audit-v3 (5.1): the alpha SCAN runs on the validation window only -
+# alpha selection must never use the final-test years it will be evaluated on.
+from temporal_split import SPLIT
+
+YEARS = list(SPLIT.validation_years)
 
 OUT_DIR = Path(__file__).resolve().parents[2] / "data" / "processed"
 OUT_PATH = OUT_DIR / "allocation_scan.csv"  # merged output (all sites)
+BEST_ALPHA_PATH = OUT_DIR / "best_fixed_alpha.csv"
 PYTHON = sys.executable  # P1 (docs/审计修复计划.md): not a hardcoded venv path
+
+
+def write_best_fixed_alpha(scan: pd.DataFrame) -> None:
+    """audit-v3 (7.1): single source for the 对比1b 'fixed_best' control -
+    per-site best fixed alpha, derived from the scan grid as the alpha
+    maximizing mean_total_yield AVERAGED over the SMT dimension (so the
+    control is not overfit to one SMT setting). optimize_cross_season.py
+    and the paper-claims collector both read this file; the papers never
+    hardcode an alpha."""
+    avg = scan.groupby(["site_id", "alpha"])["mean_total_yield"].mean().reset_index()
+    best = avg.loc[avg.groupby("site_id")["mean_total_yield"].idxmax(), ["site_id", "alpha", "mean_total_yield"]]
+    best = best.rename(columns={"alpha": "best_fixed_alpha", "mean_total_yield": "mean_yield_at_best"})
+    best.to_csv(BEST_ALPHA_PATH, index=False)
+    print(f"saved -> {BEST_ALPHA_PATH}")
+    print(best.round(4).to_string(index=False))
 
 
 def _run_one_combo(site_id, soil_key, smt, wheat_cap, maize_cap) -> dict:
@@ -192,6 +212,8 @@ def main(site_id=None, soil_key="loam", smt_label=None, alpha=None):
         frames.append(scan_site(sid))
         pd.concat(frames, ignore_index=True).to_csv(OUT_PATH, index=False)
     print(f"saved -> {OUT_PATH}")
+    merged = pd.concat(frames, ignore_index=True)
+    write_best_fixed_alpha(merged)
 
 
 if __name__ == "__main__":
