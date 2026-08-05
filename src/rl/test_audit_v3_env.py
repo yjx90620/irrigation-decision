@@ -15,26 +15,27 @@ from experiment_config import PRIMARY_CONFIG, RLExperimentConfig
 from residual_gym_env import RotationGymEnv
 from rotation import RotationCalendarError
 from rotation_env import (
-    CRITICAL_DEPLETION_MIN_MM, RotationIrrigationEnv, safety_filter, threshold_policy,
+    CRITICAL_DEPLETION_MIN_MM, YIELD_REFERENCE, RotationIrrigationEnv, safety_filter, threshold_policy,
 )
 
 
-def _run_episode(env, action=2):
-    state, _ = env.reset()
-    done = False
-    shappings, rewards = [], []
-    while not done:
-        state, reward, done, truncated, info = env.step(action)
-        shappings.append(info["reward_vector"]["yield_proxy"])
-        rewards.append(reward)
-    return shappings, rewards, info
+def _strip_harvest_bonuses(shaping, env, seen):
+    """audit-v3 (3.2 FIX): yield_proxy = strict-PBRS shaping + per-harvest
+    yield bonuses paid when each crop finishes. Strip a crop's bonus the
+    first time it appears in season_results, so the remaining sum is the
+    pure shaping (which must telescope)."""
+    for crop, res in env.inner.season_results.items():
+        if crop not in seen:
+            seen.add(crop)
+            shaping -= res["dry_yield_t_ha"] / YIELD_REFERENCE[crop]
+    return shaping
 
 
 def test_potential_shaping_telescopes():
     """audit-v3 (3.1): the pure shaping sum telescopes:
     sum gamma^t * shaping_t == -Phi(0) + gamma^T * Phi(terminal) with
-    Phi(terminal)=0. yield_proxy = shaping + (terminal yield bonus at the
-    final step), so strip the bonus from the final step before summing."""
+    Phi(terminal)=0. yield_proxy = shaping + per-harvest yield bonuses,
+    so strip each bonus the first time its crop finishes."""
     env = RotationGymEnv(mode="direct", fixed_site="hebei_central", soils=["loam"], years=[2015])
     state, _ = env.reset()
     phi_0 = float(env.inner._potential)
@@ -42,12 +43,11 @@ def test_potential_shaping_telescopes():
     done = False
     discounted_sum = 0.0
     t = 0
+    seen = set()
     while not done:
         state, reward, done, truncated, info = env.step(2)
         shaping = info["reward_vector"]["yield_proxy"]
-        if done:
-            # strip the system-normalized terminal yield bonus
-            shaping -= info["total_yield_t_ha"] / (7.0 + 11.5)
+        shaping = _strip_harvest_bonuses(shaping, env, seen)
         discounted_sum += (gamma ** t) * shaping
         t += 1
     expected = -phi_0  # Phi(terminal) = 0
@@ -58,18 +58,17 @@ def test_potential_shaping_telescopes():
 
 def test_terminal_potential_is_zero():
     """audit-v3 (3.1): the final step's shaping must be -Phi(previous)
-    (gamma * 0 - Phi), i.e. the terminal state's potential is zero."""
+    (gamma * 0 - Phi), i.e. the terminal state's potential is zero. The
+    final step also carries the last crop's harvest bonus - strip it."""
     env = RotationGymEnv(mode="direct", fixed_site="hebei_central", soils=["loam"], years=[2015])
     state, _ = env.reset()
     done = False
-    prev_shaping = None
     while not done:
         state, reward, done, truncated, info = env.step(2)
         if done:
             final_shaping = info["reward_vector"]["yield_proxy"]
-            # final_shaping = -Phi(prev) + yield_bonus; the pure shaping
-            # part (before the bonus) is -Phi(prev) in [-1, 0]
-            bonus = info["total_yield_t_ha"] / (7.0 + 11.5)
+            last_crop = env.inner.current_crop
+            bonus = env.inner.season_results[last_crop]["dry_yield_t_ha"] / YIELD_REFERENCE[last_crop]
             pure = final_shaping - bonus
             assert -1.0 <= pure <= 0.0, pure
 

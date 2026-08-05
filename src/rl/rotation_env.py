@@ -316,9 +316,18 @@ class RotationIrrigationEnv:
         # season/switch handling must complete BEFORE the shaping term so
         # phi_next reflects the true next state (or the absorbing terminal
         # state) - audit-v3 (3.1).
+        yield_bonus = 0.0
         if self.model._clock_struct.model_is_finished:
             th_end = self._finish_season()
             crop = self.current_crop
+            # audit-v3 (3.2 FIX): the yield signal is paid when the crop is
+            # harvested - per-crop yield/reference with the discount factor
+            # of THAT step - not lumped once at episode end (where gamma^T
+            # halves it and the per-step water penalty dominates, collapsing
+            # the policy into water-minimization; see the retrain learning
+            # curves). The PBRS shaping is untouched: Phi(terminal)=0 still
+            # holds and the bonus is a separate non-shaping reward term.
+            yield_bonus = self.season_results[crop]["dry_yield_t_ha"] / YIELD_REFERENCE[crop]
             if crop == "wheat":
                 self._check_wheat_maize_handoff()
                 wheat_harvest = pd.Timestamp(self.season_results["wheat"]["harvest_date"])
@@ -344,7 +353,10 @@ class RotationIrrigationEnv:
         mean_stress = float(np.mean(stress))
         water_denom = self._water_denominator()
         reward = {
-            "yield_proxy": shaping_reward,
+            # yield_proxy = strict-PBRS shaping (telescopes to a constant,
+            # zero policy gradient) + the per-harvest yield bonus (the
+            # actual yield signal).
+            "yield_proxy": shaping_reward + yield_bonus,
             "water": -actual_applied / water_denom,
             "cost": -(COST_WATER * actual_applied + COST_START * (actual_applied > 0))
             / (COST_WATER * water_denom + COST_START),
@@ -382,17 +394,14 @@ class RotationIrrigationEnv:
         }
 
         if self.done:
-            # audit-v3 (3.2): SYSTEM-level terminal yield normalization so
-            # double-crop and single-crop episodes have comparable magnitude.
+            # audit-v3 (3.2): per-harvest bonuses already paid the yield
+            # signal; this block only reports the system-level aggregates.
             system_yield = sum(v["dry_yield_t_ha"] for v in self.season_results.values())
-            system_reference = sum(YIELD_REFERENCE[crop] for crop in self.season_results)
-            if system_reference <= 0:
-                raise ValueError(f"{self.site_id}: system yield reference must be positive")
-            reward["yield_proxy"] += system_yield / system_reference
-            for name, res in self.season_results.items():
-                info[name] = res
             info["total_yield_t_ha"] = system_yield
             info["total_irrigation_mm"] = sum(v["irrigation_mm"] for v in self.season_results.values())
+
+        for name, res in self.season_results.items():
+            info[name] = res
 
         state = self._get_state()
         self._last_state = state
