@@ -110,17 +110,28 @@ def run_batch(config_expr: str, label: str, modes=None, seeds=None, concurrency=
                 done.append(name)
                 continue
 
-            # audit-v3 stall detection: no new checkpoint in too long, or a
-            # hard wall-clock cap hit -> kill the tree and relaunch.
+            # audit-v3 stall detection: the job must produce its FIRST
+            # checkpoint within CHECKPOINT_TIMEOUT_S of launch, and each
+            # subsequent one within that window of the previous - a job
+            # that does neither is stuck (the straggler signature), so
+            # kill its whole tree and relaunch (bounded by MAX_RESTARTS;
+            # exhausting them fails the batch).
             now = time.time()
             latest = latest_checkpoint_mtime(job["run"])
-            stalled = (now - max(latest, job["last_ckpt"])) > CHECKPOINT_TIMEOUT_S
-            over_cap = (now - job["launched_at"]) > HARD_CAP_S
+            last_known = max(latest, job["last_ckpt"])
+            grace_from_launch = now - job["launched_at"]
+            stalled = (
+                grace_from_launch > CHECKPOINT_TIMEOUT_S
+                and (now - last_known) > CHECKPOINT_TIMEOUT_S
+            )
+            over_cap = grace_from_launch > HARD_CAP_S
+            idle_min = int(max(0.0, now - last_known) / 60)
             if (stalled or over_cap) and job["restarts"] < MAX_RESTARTS:
                 job["restarts"] += 1
-                print(f"[{time.strftime('%H:%M:%S')}] {name} STALLED "
-                      f"(no checkpoint {int((now - max(latest, job['last_ckpt'])) / 60)} min, "
-                      f"restart {job['restarts']}/{MAX_RESTARTS})", flush=True)
+                print(f"[{time.strftime('%H:%M:%S')}] {name} "
+                      f"{'STALLED' if stalled else 'OVER CAP'} "
+                      f"(no checkpoint for {idle_min} min, restart "
+                      f"{job['restarts']}/{MAX_RESTARTS})", flush=True)
                 log.close()
                 kill_tree(proc.pid)
                 mode, seed = name.rsplit("_seed", 1)
@@ -133,8 +144,8 @@ def run_batch(config_expr: str, label: str, modes=None, seeds=None, concurrency=
                     "last_ckpt": latest_checkpoint_mtime(job["run"]),
                 })
                 print(f"[{time.strftime('%H:%M:%S')}] relaunched {name} (pid {new_proc.pid})", flush=True)
-            elif over_cap and job["restarts"] >= MAX_RESTARTS:
-                failures.append({"job": name, "returncode": "stalled-3x",
+            elif (stalled or over_cap) and job["restarts"] >= MAX_RESTARTS:
+                failures.append({"job": name, "returncode": "stalled-restarts-exhausted",
                                  "log": str(LOG_DIR / f"ppo_{name}.log")})
                 done.append(name)
 
